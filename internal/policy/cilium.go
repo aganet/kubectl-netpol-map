@@ -307,8 +307,8 @@ func anyEndpointMatches(peers []interface{}, pod corev1.Pod, policyNS string) bo
 		}
 		// Cilium label keys carry a source prefix ("k8s:", "any:", "reserved:")
 		// that pod labels don't have. Strip it before matching so a selector
-		// `k8s:app.kubernetes.io/name=temporal` matches a pod label
-		// `app.kubernetes.io/name=temporal`.
+		// `k8s:app.kubernetes.io/name=api` matches a pod label
+		// `app.kubernetes.io/name=api`.
 		s := labels.SelectorFromSet(labels.Set(stripCiliumLabelPrefixes(mlStr)))
 		if s.Matches(labels.Set(pod.Labels)) {
 			return true

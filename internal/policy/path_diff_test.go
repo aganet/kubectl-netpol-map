@@ -30,21 +30,21 @@ func ingressFromNamespaceLabel(ns, name string, podLabels map[string]string, nsK
 	}
 }
 
-// snapshot: an "agents" pod under a Cilium egress policy that only allows
-// reaching temporal-frontend on 7233, plus two temporal pods.
+// snapshot: an "clients" pod under a Cilium egress policy that only allows
+// reaching orders-frontend on 7233, plus two orders pods.
 func ciliumSnapshot() *Snapshot {
 	cnp := unstructured.Unstructured{Object: map[string]interface{}{
 		"apiVersion": "cilium.io/v2",
 		"kind":       "CiliumNetworkPolicy",
-		"metadata":   map[string]interface{}{"namespace": "agents", "name": "baseline-egress"},
+		"metadata":   map[string]interface{}{"namespace": "clients", "name": "baseline-egress"},
 		"spec": map[string]interface{}{
 			"endpointSelector": map[string]interface{}{},
 			"egress": []interface{}{
 				map[string]interface{}{
 					"toEndpoints": []interface{}{
 						map[string]interface{}{"matchLabels": map[string]interface{}{
-							"k8s:io.kubernetes.pod.namespace": "temporal",
-							"k8s:app":                         "temporal",
+							"k8s:io.kubernetes.pod.namespace": "orders",
+							"k8s:app":                         "orders",
 							"k8s:component":                   "frontend",
 						}},
 					},
@@ -60,9 +60,9 @@ func ciliumSnapshot() *Snapshot {
 	return &Snapshot{
 		Namespace: "",
 		Pods: []corev1.Pod{
-			pod("agents", "agent-a-123", map[string]string{"agent": "a"}),
-			pod("temporal", "temporal-frontend-1", map[string]string{"app": "temporal", "component": "frontend"}),
-			pod("temporal", "temporal-worker-1", map[string]string{"app": "temporal", "component": "worker"}),
+			pod("clients", "web-a-123", map[string]string{"app": "web"}),
+			pod("orders", "orders-frontend-1", map[string]string{"app": "orders", "component": "frontend"}),
+			pod("orders", "orders-worker-1", map[string]string{"app": "orders", "component": "worker"}),
 		},
 		CiliumNamespacePolicies: []unstructured.Unstructured{cnp},
 	}
@@ -71,7 +71,7 @@ func ciliumSnapshot() *Snapshot {
 func TestExplainPathAllowAndDeny(t *testing.T) {
 	snap := ciliumSnapshot()
 
-	allow, err := ExplainPath(snap, "", "agents/agent-a-123", "temporal/temporal-frontend-1", "")
+	allow, err := ExplainPath(snap, "", "clients/web-a-123", "orders/orders-frontend-1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestExplainPathAllowAndDeny(t *testing.T) {
 		t.Errorf("expected REACHABLE, got %q", allow.Verdict())
 	}
 
-	deny, err := ExplainPath(snap, "", "agents/agent-a-123", "temporal/temporal-worker-1", "")
+	deny, err := ExplainPath(snap, "", "clients/web-a-123", "orders/orders-worker-1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,11 +99,11 @@ func TestExplainPathAllowAndDeny(t *testing.T) {
 
 func TestResolveRefByLabel(t *testing.T) {
 	snap := ciliumSnapshot()
-	res, err := ExplainPath(snap, "", "agents:agent=a", "temporal/temporal-frontend-1", "7233")
+	res, err := ExplainPath(snap, "", "clients:app=web", "orders/orders-frontend-1", "7233")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(res.SrcPods) != 1 || res.SrcPods[0] != "agents/agent-a-123" {
+	if len(res.SrcPods) != 1 || res.SrcPods[0] != "clients/web-a-123" {
 		t.Errorf("label selector resolved to %v", res.SrcPods)
 	}
 	if !res.Cell.Allowed {
@@ -113,18 +113,18 @@ func TestResolveRefByLabel(t *testing.T) {
 
 // A source isolated by an egress policy whose ONLY matching rule is a
 // toFQDNs rule (which the engine can't evaluate) must yield UNKNOWN, not a
-// false DENY. This is the agents→external-FQDN case.
+// false DENY. This is the clients→external-FQDN case.
 func TestFQDNOnlyEgressIsUnknownNotDeny(t *testing.T) {
 	cnp := unstructured.Unstructured{Object: map[string]interface{}{
 		"apiVersion": "cilium.io/v2",
 		"kind":       "CiliumNetworkPolicy",
-		"metadata":   map[string]interface{}{"namespace": "agents", "name": "fqdn-egress"},
+		"metadata":   map[string]interface{}{"namespace": "clients", "name": "fqdn-egress"},
 		"spec": map[string]interface{}{
 			"endpointSelector": map[string]interface{}{},
 			"egress": []interface{}{
 				map[string]interface{}{
 					"toFQDNs": []interface{}{
-						map[string]interface{}{"matchName": "login.microsoftonline.com"},
+						map[string]interface{}{"matchName": "login.example.com"},
 					},
 					"toPorts": []interface{}{
 						map[string]interface{}{"ports": []interface{}{
@@ -137,13 +137,13 @@ func TestFQDNOnlyEgressIsUnknownNotDeny(t *testing.T) {
 	}}
 	snap := &Snapshot{
 		Pods: []corev1.Pod{
-			pod("agents", "agent-a-123", map[string]string{"agent": "a"}),
+			pod("clients", "web-a-123", map[string]string{"app": "web"}),
 			pod("other", "some-pod-1", map[string]string{"app": "x"}),
 		},
 		CiliumNamespacePolicies: []unstructured.Unstructured{cnp},
 	}
 
-	res, err := ExplainPath(snap, "", "agents/agent-a-123", "other/some-pod-1", "")
+	res, err := ExplainPath(snap, "", "clients/web-a-123", "other/some-pod-1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,13 +159,13 @@ func TestFQDNOnlyEgressIsUnknownNotDeny(t *testing.T) {
 // IP becomes a real ALLOW edge; a name resolving externally lands in the
 // ExternalEgress report instead.
 func TestFQDNResolutionMatchesPodAndReportsExternal(t *testing.T) {
-	dstPod := pod("temporal", "frontend-1", map[string]string{"app": "temporal"})
+	dstPod := pod("orders", "frontend-1", map[string]string{"app": "orders"})
 	dstPod.Status.PodIP = "10.0.3.7"
 
 	cnp := unstructured.Unstructured{Object: map[string]interface{}{
 		"apiVersion": "cilium.io/v2",
 		"kind":       "CiliumNetworkPolicy",
-		"metadata":   map[string]interface{}{"namespace": "agents", "name": "fqdn-egress"},
+		"metadata":   map[string]interface{}{"namespace": "clients", "name": "fqdn-egress"},
 		"spec": map[string]interface{}{
 			"endpointSelector": map[string]interface{}{},
 			"egress": []interface{}{
@@ -184,15 +184,15 @@ func TestFQDNResolutionMatchesPodAndReportsExternal(t *testing.T) {
 		},
 	}}
 	snap := &Snapshot{
-		Pods:                    []corev1.Pod{pod("agents", "agent-a-1", map[string]string{"agent": "a"}), dstPod},
+		Pods:                    []corev1.Pod{pod("clients", "web-a-1", map[string]string{"app": "web"}), dstPod},
 		CiliumNamespacePolicies: []unstructured.Unstructured{cnp},
 		Resolver: MapResolver{
-			"internal.svc.example": {"10.0.3.7"},        // points at the pod
-			"api.stripe.com":    {"160.79.104.10"},   // external
+			"internal.svc.example": {"10.0.3.7"},      // points at the pod
+			"api.stripe.com":       {"160.79.104.10"}, // external
 		},
 	}
 
-	res, err := ExplainPath(snap, "", "agents/agent-a-1", "temporal/frontend-1", "443")
+	res, err := ExplainPath(snap, "", "clients/web-a-1", "orders/frontend-1", "443")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestL7RestrictedAllow(t *testing.T) {
 	cnp := unstructured.Unstructured{Object: map[string]interface{}{
 		"apiVersion": "cilium.io/v2",
 		"kind":       "CiliumNetworkPolicy",
-		"metadata":   map[string]interface{}{"namespace": "agents", "name": "l7-egress"},
+		"metadata":   map[string]interface{}{"namespace": "clients", "name": "l7-egress"},
 		"spec": map[string]interface{}{
 			"endpointSelector": map[string]interface{}{},
 			"egress": []interface{}{
@@ -250,10 +250,10 @@ func TestL7RestrictedAllow(t *testing.T) {
 		},
 	}}
 	snap := &Snapshot{
-		Pods:                    []corev1.Pod{pod("agents", "agent-a-1", map[string]string{"agent": "a"}), dst},
+		Pods:                    []corev1.Pod{pod("clients", "web-a-1", map[string]string{"app": "web"}), dst},
 		CiliumNamespacePolicies: []unstructured.Unstructured{cnp},
 	}
-	res, err := ExplainPath(snap, "", "agents/agent-a-1", "svc/api-1", "")
+	res, err := ExplainPath(snap, "", "clients/web-a-1", "svc/api-1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +302,7 @@ func TestNamespaceSelectorMatching(t *testing.T) {
 
 func TestResolveRefMissing(t *testing.T) {
 	snap := ciliumSnapshot()
-	if _, err := ExplainPath(snap, "", "agents/nope", "temporal/temporal-frontend-1", ""); err == nil {
+	if _, err := ExplainPath(snap, "", "clients/nope", "orders/orders-frontend-1", ""); err == nil {
 		t.Errorf("expected error for unknown source pod")
 	}
 }
@@ -323,15 +323,15 @@ func TestDiffNewlyAllowed(t *testing.T) {
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  namespace: agents
+  namespace: clients
   name: baseline-egress
 spec:
   endpointSelector: {}
   egress:
     - toEndpoints:
         - matchLabels:
-            k8s:io.kubernetes.pod.namespace: temporal
-            k8s:app: temporal
+            k8s:io.kubernetes.pod.namespace: orders
+            k8s:app: orders
             k8s:component: frontend
       toPorts:
         - ports:
@@ -339,8 +339,8 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            k8s:io.kubernetes.pod.namespace: temporal
-            k8s:app: temporal
+            k8s:io.kubernetes.pod.namespace: orders
+            k8s:app: orders
             k8s:component: worker
       toPorts:
         - ports:
@@ -361,7 +361,7 @@ spec:
 	}
 	found := false
 	for _, c := range d.NewlyAllowed {
-		if c.Key.Src == "agents/agent-a-123" && c.Key.Dst == "temporal/temporal-worker-1" {
+		if c.Key.Src == "clients/web-a-123" && c.Key.Dst == "orders/orders-worker-1" {
 			found = true
 		}
 	}

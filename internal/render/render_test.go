@@ -8,18 +8,18 @@ import (
 )
 
 // sampleMatrix builds a tiny cross-namespace matrix mirroring the
-// "agents → temporal" shape: one source workload reaching one of two
+// "shop → orders" shape: one source workload reaching one of two
 // destinations on a port, denied to the other.
 func sampleMatrix() *policy.Matrix {
 	rows := []policy.Axis{
-		{Namespace: "agents", Kind: "Deployment", Name: "agent-a"},
+		{Namespace: "shop", Kind: "Deployment", Name: "web-a"},
 	}
 	cols := []policy.Axis{
-		{Namespace: "temporal", Kind: "Deployment", Name: "frontend"},
-		{Namespace: "temporal", Kind: "Deployment", Name: "worker"},
+		{Namespace: "orders", Kind: "Deployment", Name: "frontend"},
+		{Namespace: "orders", Kind: "Deployment", Name: "worker"},
 	}
 	cells := [][]policy.Cell{{
-		{Allowed: true, PolicyApplied: true, Ports: []string{"7233"}, Reason: "Cilium egress: agents/baseline-egress"},
+		{Allowed: true, PolicyApplied: true, Ports: []string{"7233"}, Reason: "Cilium egress: shop/baseline-egress"},
 		{Allowed: false, PolicyApplied: true, Reason: "Cilium: src isolated for egress; no Cilium rule matches dst"},
 	}}
 	return &policy.Matrix{
@@ -78,11 +78,11 @@ func TestHTMLRendersTableAndGraph(t *testing.T) {
 func TestWhyAggregates(t *testing.T) {
 	// Two DENY edges with the same reason should collapse to one group line.
 	rows := []policy.Axis{
-		{Namespace: "agents", Kind: "Deployment", Name: "agent-a"},
+		{Namespace: "shop", Kind: "Deployment", Name: "web-a"},
 	}
 	cols := []policy.Axis{
-		{Namespace: "temporal", Kind: "Deployment", Name: "worker"},
-		{Namespace: "temporal", Kind: "Deployment", Name: "history"},
+		{Namespace: "orders", Kind: "Deployment", Name: "worker"},
+		{Namespace: "orders", Kind: "Deployment", Name: "history"},
 	}
 	reason := "Cilium: src isolated for egress; no Cilium rule matches dst"
 	cells := [][]policy.Cell{{

@@ -416,7 +416,7 @@ func printCrossEdgesExpanded(w io.Writer, edges []crossEdge) {
 }
 
 // printCrossEdgesCollapsed groups edges by (source, destination-namespace,
-// verdict-category) so that "agents/pi-agent → kube-system/<each pod> DENY"
+// verdict-category) so that "shop/frontend → kube-system/<each pod> DENY"
 // becomes one row instead of 28. Pure DENY collapses across an entire
 // destination namespace; ALLOW/PARTIAL retain detail (one row per
 // destination workload) since the port set may differ.
@@ -835,12 +835,12 @@ func JSON(w io.Writer, m *policy.Matrix) error {
 		Kind      string `json:"kind"`
 	}
 	type output struct {
-		Namespace          string      `json:"namespace,omitempty"`
-		PodCount           int         `json:"podCount"`
-		StandardPolicies   int         `json:"standardPolicyCount"`
-		CiliumPolicies     []ciliumRef `json:"ciliumPolicies"`
-		PortFilter         int32       `json:"portFilter,omitempty"`
-		Edges              []edge      `json:"edges"`
+		Namespace        string      `json:"namespace,omitempty"`
+		PodCount         int         `json:"podCount"`
+		StandardPolicies int         `json:"standardPolicyCount"`
+		CiliumPolicies   []ciliumRef `json:"ciliumPolicies"`
+		PortFilter       int32       `json:"portFilter,omitempty"`
+		Edges            []edge      `json:"edges"`
 	}
 
 	out := output{

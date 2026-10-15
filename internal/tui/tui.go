@@ -361,9 +361,9 @@ const headerRows = 5
 func (m Model) listRows() int   { return max(3, (m.height-headerRows-7)*2/5) }
 func (m Model) detailRows() int { return max(3, m.height-headerRows-7-m.listRows()) }
 func (m Model) mainWidth() int  { return max(40, m.width-nsPaneWidth-4) }
-func (m Model) listTop() int    { return headerRows + 3 }                  // first list row on screen
+func (m Model) listTop() int    { return headerRows + 3 }                // first list row on screen
 func (m Model) detailTop() int  { return headerRows + m.listRows() + 4 } // first detail row
-func (m Model) nsTop() int      { return headerRows + 2 }                  // first namespace row
+func (m Model) nsTop() int      { return headerRows + 2 }                // first namespace row
 
 func (m *Model) resetSelection() {
 	m.listIdx, m.listOffset, m.showTrace, m.yamlMode = 0, 0, false, false

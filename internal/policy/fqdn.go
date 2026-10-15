@@ -96,10 +96,10 @@ type podRef struct {
 // derived from a toFQDNs / toCIDR rule that does not resolve to an in-cluster
 // pod. Surfaced in a dedicated report section since it has no matrix cell.
 type ExternalEgress struct {
-	Source  string   // "ns/Kind/Name" or "ns/pod"
-	Target  string   // FQDN, pattern, or CIDR
-	Kind    string   // "fqdn", "fqdn-pattern", "cidr", "entity"
-	Ports   []string // allowed ports ("*" = all)
+	Source   string   // "ns/Kind/Name" or "ns/pod"
+	Target   string   // FQDN, pattern, or CIDR
+	Kind     string   // "fqdn", "fqdn-pattern", "cidr", "entity"
+	Ports    []string // allowed ports ("*" = all)
 	Resolved []string // resolved IPs, if any (FQDN only)
 }
 

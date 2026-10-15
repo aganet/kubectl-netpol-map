@@ -132,7 +132,7 @@ Examples:
   kubectl npmap -n my-ns
   kubectl npmap --all-namespaces
   kubectl npmap --from app=frontend --to app=db --port 5432
-  kubectl npmap -A --from-namespace agents --to-namespace temporal
+  kubectl npmap -A --from-namespace shop --to-namespace payments
   kubectl npmap -A --denies-only
   kubectl npmap -o json`,
 		RunE: func(_ *cobra.Command, _ []string) error {
@@ -340,8 +340,8 @@ Examples:
   kubectl npmap path shop/frontend api.payments.svc.cluster.local:8080
   kubectl npmap path shop/frontend internet
   kubectl npmap path shop/frontend api.stripe.com:443 --resolve-fqdn
-  kubectl npmap path agents/agent-pi-agent temporal/temporal-frontend --port 7233
-  kubectl npmap path "agents:agent=pi-agent" temporal/temporal-frontend
+  kubectl npmap path shop/frontend payments/api --port 8080
+  kubectl npmap path "shop:app=frontend" payments/api
   kubectl npmap path -n shop frontend api:8080 -o json`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
