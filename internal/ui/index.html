@@ -1,0 +1,882 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>npmap</title>
+<style>
+  :root {
+    --bg: #f7f7f8; --bg-2: #ffffff; --panel: #ffffff; --panel-2: #f3f4f6; --border: #e2e4e8; --border-2: #cfd3d9;
+    --text: #1b1f24; --muted: #5b6370; --accent: #3b5bdb; --accent-fg: #ffffff; --accent-soft: #e8edfb;
+    --ok: #137a3a; --ok-soft: #dcf5e4; --warn: #9a5a00; --warn-soft: #fff1cf;
+    --fail: #c22424; --fail-soft: #fde2e2; --skip: #8a919c; --skip-soft: #eef0f3;
+    --map-bg: #ffffff; --grid: #e6e8ec;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+    --radius: 10px; --shadow: 0 2px 4px rgba(11,26,51,.08), 0 14px 32px -12px rgba(11,26,51,.35);
+  }
+  :root[data-theme="dark"] {
+    --bg: #161616; --bg-2: #1c1c1c; --panel: #202020; --panel-2: #2a2a2a; --border: #343434; --border-2: #444444;
+    --text: #f2f2f2; --muted: #a8adb5; --accent: #8fa6ff; --accent-fg: #101010; --accent-soft: #2c3350;
+    --ok: #5ee08f; --ok-soft: #163a25; --warn: #ffc857; --warn-soft: #3d2d0a;
+    --fail: #ff7b7b; --fail-soft: #41191a; --skip: #7a7f88; --skip-soft: #2a2a2a;
+    --map-bg: #1a1a1a; --grid: #262626;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 32px -18px rgba(0,0,0,.8);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 var(--sans); }
+  button, input { font: inherit; color: inherit; }
+  code, .mono { font-family: var(--mono); font-size: 13px; }
+  a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+  a:hover { filter: brightness(.85); }
+
+  .top { display: flex; align-items: center; gap: 12px; padding: 0 18px; height: 52px; border-bottom: 1px solid var(--border); background: var(--bg-2); position: sticky; top: 0; z-index: 10; }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 15px; letter-spacing: -.01em; margin-right: 6px; }
+  .brand svg { width: 24px; height: 24px; color: var(--accent); }
+  .tabs { display: flex; gap: 2px; height: 100%; }
+  .tab { padding: 0 14px; border: 0; background: transparent; cursor: pointer; color: var(--muted); font-weight: 500; border-bottom: 2px solid transparent; }
+  .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+  .spacer { flex: 1; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--border); font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .pill b { color: var(--text); font-weight: 600; }
+  .pill.ok { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
+  .pill.warn, .pill.unknown { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
+  .pill.fail { color: var(--fail); background: var(--fail-soft); border-color: transparent; }
+  .pill.accent { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+  .pill.click { cursor: pointer; }
+  .stats { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .btn { display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border-2); background: var(--panel); cursor: pointer; transition: background .15s, border-color .15s; white-space: nowrap; }
+  .btn:hover { background: var(--panel-2); border-color: var(--accent); }
+  .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; font-weight: 600; padding: 9px 16px; }
+  .btn.primary:hover { filter: brightness(1.1); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.small { padding: 3px 9px; font-size: 12px; border-radius: 6px; }
+  .btn.icon { padding: 6px 9px; }
+
+  main { padding: 16px 18px 60px; max-width: 1500px; margin: 0 auto; }
+  .panel { display: none; } .panel.active { display: block; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; }
+  .card h3 { margin: 0 0 12px; font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); }
+  .field { margin-bottom: 10px; } .field:last-child { margin-bottom: 0; }
+  .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 500; }
+  .row { display: flex; gap: 10px; } .row > * { flex: 1; min-width: 0; }
+  .seg { display: inline-flex; border: 1px solid var(--border-2); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; background: var(--panel); padding: 6px 12px; cursor: pointer; color: var(--muted); }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .error { padding: 10px 14px; border-radius: 8px; background: var(--fail-soft); color: var(--fail); margin-bottom: 12px; }
+  .empty { color: var(--muted); text-align: center; padding: 36px 0; }
+  .toolbar { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; margin-bottom: 12px; }
+  .toolbar .field { margin: 0; min-width: 190px; }
+  input[type=number], input[type=search] { padding: 8px 11px; border: 1px solid var(--border-2); border-radius: 8px; background: var(--panel); outline: none; }
+  .maptools { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; padding-bottom: 6px; }
+  .maptools input[type=range] { width: 110px; vertical-align: middle; accent-color: var(--accent); }
+  input:focus { border-color: var(--accent); }
+  .toolbar input[type=number] { width: 110px; }
+  .check { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); padding-bottom: 8px; }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+  .spin { display: inline-block; width: 13px; height: 13px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .legend { display: flex; gap: 14px; align-items: center; color: var(--muted); font-size: 12px; margin-left: auto; padding-bottom: 8px; flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 22px; border-top: 2px solid; vertical-align: middle; margin-right: 5px; }
+  .legend label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; }
+  .legend label input { margin: 0 2px 0 0; accent-color: var(--accent); }
+  .legend .allow { border-color: var(--ok); } .legend .deny { border-color: var(--fail); border-top-style: dashed; } .legend .partial { border-color: var(--warn); } .legend .unknown { border-color: var(--warn); border-top-style: dotted; } .legend .blocked { border-color: var(--warn); border-top-style: dashed; }
+  .badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: var(--skip-soft); color: var(--muted); letter-spacing: .04em; }
+  .badge.i, .badge.e { background: var(--accent-soft); color: var(--accent); }
+  .badge.deny { background: var(--fail-soft); color: var(--fail); } .badge.l7 { background: var(--warn-soft); color: var(--warn); }
+  .badge.std { background: var(--skip-soft); color: var(--text); } .badge.cil { background: #d9f4f0; color: #0f766e; }
+  :root[data-theme="dark"] .badge.cil { background: #1f3a3a; color: #5fd3c7; }
+
+  /* searchable select */
+  .picker { position: relative; }
+  .picker-btn { width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 11px; border: 1px solid var(--border-2); border-radius: 8px; background: var(--panel); cursor: pointer; text-align: left; transition: border-color .15s, box-shadow .15s; }
+  .picker-btn:hover { border-color: var(--accent); }
+  .picker.open .picker-btn { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .picker-btn.empty .picker-label { color: var(--muted); }
+  .picker-btn:disabled { opacity: .5; cursor: default; }
+  .picker-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .picker-hint { color: var(--muted); font-size: 12px; margin-left: auto; white-space: nowrap; }
+  .chev { color: var(--muted); font-size: 10px; }
+  .picker-pop { position: absolute; top: calc(100% + 5px); left: 0; right: 0; z-index: 30; background: var(--panel); border: 1px solid var(--border-2); border-radius: 9px; box-shadow: var(--shadow); display: flex; flex-direction: column; max-height: 320px; overflow: hidden; }
+  .picker-pop[hidden] { display: none; }
+  .picker-pop input { width: 100%; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; padding: 9px 11px; }
+  .picker-list { overflow: auto; padding: 4px; }
+  .picker-item { display: flex; justify-content: space-between; gap: 10px; padding: 6px 9px; border-radius: 6px; cursor: pointer; }
+  .picker-item .hint { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .picker-item.active, .picker-item:hover { background: var(--accent-soft); }
+  .picker-item.custom { color: var(--accent); }
+  .picker-empty { padding: 10px; color: var(--muted); text-align: center; }
+
+  /* policy map, drawn like the Cilium editor: cards with rows and elbow connectors */
+  :root { --ico: #2f6fb5; --edge-allow: #3f8f1f; --edge-deny: #d7453b; --edge-warn: #d99a06; }
+  :root[data-theme="dark"] { --ico: #7fb0ec; --edge-allow: #5ec43a; --edge-deny: #ff6b5e; --edge-warn: #f5b942; }
+  .map { position: relative; background: var(--map-bg); border: 1px solid var(--border); border-radius: var(--radius); overflow: auto; height: 60vh; min-height: 400px;
+    background-image: radial-gradient(var(--grid) 1px, transparent 1px); background-size: 22px 22px; }
+  .map svg { display: block; }
+  .map .cardbg { fill: var(--panel); stroke: var(--border-2); rx: 14; cursor: grab; filter: url(#cardShadow); }
+  .map .cardbg.ext { stroke-dasharray: 5 4; }
+  .map .colgroup.dragging { opacity: .8; } .map .colgroup.dragging .cardbg { cursor: grabbing; stroke: var(--accent); stroke-width: 2; }
+  .map .hdr { font-size: 15px; font-weight: 700; fill: var(--text); pointer-events: none; }
+  .map .hdrline { stroke: var(--border); }
+  .map .node rect { fill: var(--panel); stroke: var(--border-2); rx: 6; cursor: pointer; transition: stroke .15s; }
+  .map .node.dim { opacity: .45; }
+  .map .node:hover rect, .map .node.focus rect { stroke: var(--accent); stroke-width: 2; }
+  .map .node text { font-size: 14px; fill: var(--text); pointer-events: none; }
+  .map .node .kind { font-size: 11px; fill: var(--muted); }
+  .map .edge { fill: none; stroke-width: 2.4; stroke-linejoin: round; stroke-linecap: round; cursor: pointer; }
+  .map .edge.allow { stroke: var(--edge-allow); } .map .edge.deny { stroke: var(--edge-deny); stroke-dasharray: 7 5; stroke-width: 1.6; opacity: .7; }
+  .map .edge.partial { stroke: var(--edge-warn); } .map .edge.unknown { stroke: var(--edge-warn); stroke-dasharray: 2 5; }
+  .map .edge.blocked { stroke: var(--edge-warn); stroke-dasharray: 7 5; }
+  .map .edge:hover, .map .edge.hl { stroke-width: 4; opacity: 1; }
+  .map .stub { rx: 2; pointer-events: none; }
+  .map .stub.allow { fill: var(--edge-allow); } .map .stub.deny { fill: var(--edge-deny); } .map .stub.blocked, .map .stub.partial, .map .stub.unknown { fill: var(--edge-warn); }
+  .map.focused .edge:not(.focus) { opacity: .08; } .map.focused .node:not(.focus) { opacity: .3; } .map.focused .stub { opacity: .25; }
+  .flows { margin-top: 12px; max-height: 40vh; overflow: auto; }
+  .tip { position: fixed; z-index: 40; pointer-events: none; background: var(--panel); border: 1px solid var(--border-2); border-radius: 8px; padding: 8px 10px; box-shadow: var(--shadow); font-size: 12.5px; max-width: 460px; }
+  .tip[hidden] { display: none; }
+  .tip .t { font-weight: 600; margin-bottom: 2px; } .tip .r { color: var(--muted); } .tip .l { margin-top: 3px; }
+
+  /* policies */
+  .split { display: grid; grid-template-columns: 420px 1fr; gap: 12px; margin-top: 12px; align-items: start; }
+  .plist { max-height: 60vh; overflow: auto; padding: 8px; }
+  .pitem { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
+  .pitem:hover { background: var(--panel-2); } .pitem.active { border-color: var(--accent); background: var(--accent-soft); }
+  .pitem .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pitem .meta { color: var(--muted); font-size: 12.5px; grid-column: 1 / -1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pitem .badges { display: flex; gap: 4px; }
+  .detail { position: relative; min-height: 300px; background: var(--map-bg); background-image: radial-gradient(var(--grid) 1px, transparent 1px); background-size: 22px 22px; }
+  .cols { display: grid; grid-template-columns: 1fr 1.15fr 1fr; gap: 64px; position: relative; z-index: 1; }
+  .col h4 { margin: 0 0 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); display: flex; justify-content: space-between; }
+  .ecard { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); padding: 10px 12px 12px; margin-bottom: 14px; }
+  .ecard.deny { border-color: var(--edge-deny); }
+  .rhdr { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 15px; padding: 2px 2px 8px; }
+  .rhdr .ico { width: 24px; height: 24px; flex: none; }
+  .rhdr .sp { flex: 1; }
+  .prow { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid var(--border-2); border-radius: 7px; padding: 8px 11px; margin-top: 7px; background: var(--panel); }
+  .prow .m { color: var(--muted); font-size: 12px; font-family: var(--mono); overflow-wrap: anywhere; margin-top: 2px; }
+  .pb { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 12.5px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 2px 7px; white-space: nowrap; }
+  .center { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); padding: 12px; }
+  .center .sel { font-family: var(--mono); font-size: 12px; color: var(--muted); margin: -4px 0 8px 33px; }
+  .locks { display: flex; gap: 8px; margin: 4px 0 10px; flex-wrap: wrap; }
+  .note { color: var(--muted); font-size: 12.5px; font-style: italic; padding: 8px 0; }
+  .finding { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--border-2); border-radius: 9px; padding: 9px 11px; margin-bottom: 8px; position: relative; z-index: 1; }
+  .finding.warning { border-left-color: var(--edge-warn); } .finding.error { border-left-color: var(--edge-deny); }
+  .connectors { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+  .connectors path { fill: none; stroke-width: 2.4; stroke-linejoin: round; }
+  .connectors .allow { stroke: var(--edge-allow); } .connectors .deny { stroke: var(--edge-deny); stroke-dasharray: 7 5; }
+  .connectors .stub.allow { fill: var(--edge-allow); } .connectors .stub.deny { fill: var(--edge-deny); }
+
+  /* trace */
+  .form { display: grid; grid-template-columns: 1fr 44px 1fr; gap: 14px; align-items: stretch; }
+  .arrow { display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 26px; }
+  .actions { display: flex; align-items: center; gap: 12px; margin: 14px 0 18px; flex-wrap: wrap; }
+  .cli { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 260px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; color: var(--muted); overflow: hidden; }
+  .cli code { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+  .verdict { display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-radius: var(--radius); margin-bottom: 12px; border-left: 4px solid currentColor; }
+  .verdict.pass { background: var(--ok-soft); color: var(--ok); } .verdict.warn { background: var(--warn-soft); color: var(--warn); } .verdict.fail { background: var(--fail-soft); color: var(--fail); }
+  .verdict .big { font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
+  .verdict .sub { color: var(--text); opacity: .75; font-size: 12.5px; }
+  .verdict .glyph { font-size: 26px; line-height: 1; }
+  .layer { display: grid; grid-template-columns: 30px 124px 1fr; gap: 12px; padding: 11px 4px; border-top: 1px solid var(--border); align-items: start; }
+  .layer:first-child { border-top: 0; }
+  .g { width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; }
+  .g.pass { background: var(--ok-soft); color: var(--ok); } .g.fail { background: var(--fail-soft); color: var(--fail); } .g.warn { background: var(--warn-soft); color: var(--warn); } .g.skip { background: var(--skip-soft); color: var(--skip); }
+  .layer .n { font-weight: 600; padding-top: 2px; } .layer.skip .n, .layer.skip .s { color: var(--muted); }
+  .layer .s { padding-top: 2px; overflow-wrap: anywhere; }
+  .layer .d { color: var(--muted); font-size: 12.5px; margin-top: 2px; font-family: var(--mono); }
+  .fix { margin-top: 8px; padding: 9px 11px; border-radius: 8px; background: var(--panel-2); border: 1px dashed var(--border-2); white-space: pre-wrap; font-size: 12.5px; }
+  .fix b { display: block; margin-bottom: 2px; }
+  .layer.fail .fix { border-color: var(--fail); } .layer.warn .fix { border-color: var(--warn); }
+  details { margin-top: 12px; } summary { cursor: pointer; color: var(--muted); user-select: none; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 7px 10px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--panel); }
+  td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: 0; }
+  tr.hl td { background: var(--accent-soft); }
+
+  @media (max-width: 960px) { .split, .cols { grid-template-columns: 1fr; } .form { grid-template-columns: 1fr; } .arrow { transform: rotate(90deg); } .layer { grid-template-columns: 30px 1fr; } .layer .s { grid-column: 2; } .stats { display: none; } .connectors { display: none; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="ico-ns" viewBox="0 0 24 24" fill="none" stroke="var(--ico)" stroke-width="1.9" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></symbol>
+  <symbol id="ico-globe" viewBox="0 0 24 24" fill="none" stroke="var(--ico)" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="3.8" ry="9"/><path d="M3 12h18M4.6 7.5h14.8M4.6 16.5h14.8"/></symbol>
+  <symbol id="ico-cluster" viewBox="0 0 24 24" fill="var(--ico)"><circle cx="12" cy="12" r="2.3"/><circle cx="12" cy="4.5" r="2"/><circle cx="18.5" cy="8.2" r="2"/><circle cx="18.5" cy="15.8" r="2"/><circle cx="12" cy="19.5" r="2"/><circle cx="5.5" cy="15.8" r="2"/><circle cx="5.5" cy="8.2" r="2"/><path d="M12 7v3M15.5 9.5l-2 1.2M15.5 14.5l-2-1.2M12 17v-3M8.5 14.5l2-1.2M8.5 9.5l2 1.2" stroke="var(--ico)" stroke-width="1.2"/></symbol>
+</svg>
+<header class="top">
+  <div class="brand">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7.2 7.3l3.6 8.4M16.8 7.3l-3.6 8.4M7.5 6h9"/></svg>
+    npmap
+  </div>
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="policies">Policies</button>
+    <button class="tab" data-tab="trace">Trace</button>
+  </nav>
+  <div class="spacer"></div>
+  <span class="stats" id="stats"></span>
+  <span class="pill" id="ctx" title="kubeconfig context">…</span>
+  <button class="btn icon" id="refresh" title="Re-read pods, Services and policies from the cluster">↻ <span>Refresh</span></button>
+  <button class="btn icon" id="theme" title="Toggle light/dark">◐</button>
+</header>
+
+<main>
+  <!-- Policies -->
+  <section class="panel active" id="panel-policies">
+    <div class="toolbar">
+      <div class="field"><label>Namespace</label><div id="pNs"></div></div>
+      <div class="field"><label>Search</label><input type="search" id="pSearch" placeholder="policy, workload, selector, peer…" style="min-width:260px"></div>
+      <div class="field" style="min-width:0"><label>Port</label><input type="number" id="pPort" placeholder="any" min="1" max="65535" title="only draw rules and verdicts that cover this port"></div>
+      <div class="seg" id="pKind" style="margin-bottom:1px"><button data-k="" class="active">All</button><button data-k="NetworkPolicy">Standard</button><button data-k="Cilium">Cilium</button></div>
+      <label class="check"><input type="checkbox" id="pExt" checked> external peers</label>
+      <div class="legend" id="pShow" title="tick the edge types to draw">
+        <label><input type="checkbox" value="allow" checked><i class="allow"></i>allowed by a rule</label>
+        <label><input type="checkbox" value="blocked" checked><i class="blocked"></i>rule exists, still denied</label>
+        <label><input type="checkbox" value="deny"><i class="deny"></i>denied</label>
+        <label><input type="checkbox" value="uncertain" checked><i class="partial"></i>partial / unknown</label>
+      </div>
+      <div class="maptools"><label>Zoom <input type="range" class="zoom" data-map="pmap" min="50" max="160" value="100"></label><button class="btn small" data-reset="pmap" title="Put the namespaces back in a row">Reset layout</button><button class="btn small" data-dl="pmap">Download SVG</button></div>
+    </div>
+    <div id="policiesError"></div>
+    <div class="chips" id="pChips"></div>
+    <div class="map" id="pmap"><div class="empty">Loading policies…</div></div>
+    <details class="card flows" id="pflows"><summary id="pflowsSummary">Connections drawn</summary><div id="pflowsBody"></div></details>
+    <div class="split">
+      <div class="card plist" id="pList"></div>
+      <div class="card detail" id="pDetail"><div class="empty">Select a policy on the left, or click an edge or a workload on the map.</div></div>
+    </div>
+  </section>
+
+  <!-- Trace -->
+  <section class="panel" id="panel-trace">
+    <div class="form">
+      <div class="card">
+        <h3>Source</h3>
+        <div class="field"><label>Namespace</label><div id="srcNs"></div></div>
+        <div class="field"><label>Workload</label><div id="srcWl"></div></div>
+      </div>
+      <div class="arrow">→</div>
+      <div class="card">
+        <h3>Destination</h3>
+        <div class="field"><label>Kind</label>
+          <div class="seg" id="dstKind"><button data-kind="service" class="active">Service</button><button data-kind="workload">Workload</button><button data-kind="internet">Internet</button></div>
+        </div>
+        <div class="field" id="dstNsField"><label>Namespace</label><div id="dstNs"></div></div>
+        <div class="row">
+          <div class="field"><label id="dstNameLabel">Service</label><div id="dstName"></div></div>
+          <div class="field" style="flex:0 0 44%"><label>Port</label><div id="dstPort"></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="run">Trace connection</button>
+      <div class="cli"><span>CLI</span><code id="cli">kubectl npmap path …</code><button class="btn small" id="copy">Copy</button></div>
+    </div>
+    <div id="traceError"></div>
+    <div id="traceResult"></div>
+  </section>
+
+</main>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const GLYPH = { pass: '✓', fail: '✗', warn: '!', skip: '–' };
+const PILL = { allow: 'ok', deny: 'fail', partial: 'warn', unknown: 'unknown', blocked: 'warn' };
+const keyOf = (a) => `${a.ns}/${a.kind}/${a.name}`;
+const tip = $('#tip');
+const showTip = (ev, html) => { tip.hidden = false; tip.style.left = ev.clientX + 14 + 'px'; tip.style.top = ev.clientY + 14 + 'px'; tip.innerHTML = html; };
+const hideTip = () => { tip.hidden = true; };
+
+/* ---------- searchable select ---------- */
+class Picker {
+  constructor(el, { placeholder = 'Select…', onChange = () => {}, custom = null } = {}) {
+    Object.assign(this, { el, placeholder, onChange, custom, options: [], value: null, active: 0 });
+    el.classList.add('picker');
+    el.innerHTML = `<button type="button" class="picker-btn empty"><span class="picker-label"></span><span class="picker-hint"></span><span class="chev">▼</span></button>
+      <div class="picker-pop" hidden><input type="search" placeholder="Type to filter…"><div class="picker-list"></div></div>`;
+    this.btn = el.querySelector('.picker-btn'); this.label = el.querySelector('.picker-label'); this.hint = el.querySelector('.picker-hint');
+    this.pop = el.querySelector('.picker-pop'); this.input = el.querySelector('input'); this.list = el.querySelector('.picker-list');
+    this.btn.addEventListener('click', () => this.pop.hidden ? this.open() : this.close());
+    this.input.addEventListener('input', () => { this.active = 0; this.render(); });
+    this.input.addEventListener('keydown', (e) => {
+      const n = this.filtered().length;
+      if (e.key === 'ArrowDown') { this.active = Math.min(n - 1, this.active + 1); this.render(); e.preventDefault(); }
+      else if (e.key === 'ArrowUp') { this.active = Math.max(0, this.active - 1); this.render(); e.preventDefault(); }
+      else if (e.key === 'Enter') { const o = this.filtered()[this.active]; if (o) this.choose(o); e.preventDefault(); }
+      else if (e.key === 'Escape') { this.close(); this.btn.focus(); }
+    });
+    document.addEventListener('click', (e) => { if (!el.contains(e.target)) this.close(); });
+    this.renderLabel();
+  }
+  setOptions(opts, keep = true) {
+    this.options = opts;
+    if (!keep || !opts.some((o) => o.value === this.value)) this.value = null;
+    this.btn.disabled = opts.length === 0 && !this.custom;
+    this.renderLabel(); this.render();
+  }
+  set(value, silent = false) {
+    if (!this.options.some((o) => o.value === value)) {
+      if (!this.custom || !value) return false;
+      this.options = this.options.concat([this.custom(value)]);
+    }
+    this.value = value; this.renderLabel(); if (!silent) this.onChange(value); return true;
+  }
+  current() { return this.options.find((o) => o.value === this.value) || null; }
+  filtered() {
+    const q = this.input.value.trim();
+    const f = q ? this.options.filter((o) => (o.label + ' ' + (o.hint || '')).toLowerCase().includes(q.toLowerCase())) : this.options.slice();
+    if (this.custom && q && !this.options.some((o) => o.value === q)) f.push({ ...this.custom(q), isCustom: true });
+    return f;
+  }
+  open() { if (this.btn.disabled) return; this.pop.hidden = false; this.el.classList.add('open'); this.input.value = ''; this.active = Math.max(0, this.options.findIndex((o) => o.value === this.value)); this.render(); this.input.focus(); }
+  close() { this.pop.hidden = true; this.el.classList.remove('open'); }
+  choose(o) { if (o.isCustom) this.options = this.options.concat([{ ...o, isCustom: false }]); this.value = o.value; this.renderLabel(); this.close(); this.onChange(o.value); }
+  render() {
+    const f = this.filtered();
+    this.list.innerHTML = f.length ? f.map((o, i) => `<div class="picker-item${i === this.active ? ' active' : ''}${o.isCustom ? ' custom' : ''}" data-i="${i}"><span>${o.isCustom ? 'Use “' + esc(o.label) + '”' : esc(o.label)}</span><span class="hint">${esc(o.hint || '')}</span></div>`).join('') : '<div class="picker-empty">No match</div>';
+    this.list.querySelectorAll('.picker-item').forEach((n) => n.addEventListener('click', () => this.choose(f[+n.dataset.i])));
+    const a = this.list.querySelector('.active'); if (a) a.scrollIntoView({ block: 'nearest' });
+  }
+  renderLabel() {
+    const o = this.current();
+    this.label.textContent = o ? o.label : this.placeholder; this.hint.textContent = o ? (o.hint || '') : '';
+    this.btn.classList.toggle('empty', !o);
+  }
+}
+
+/* ---------- state & pickers ---------- */
+const state = { refs: null, dstKind: 'service', edges: [], focus: null, policies: [], coverage: null, pKind: '', pFocus: null, pSelected: null };
+const nsOf = (name) => state.refs?.namespaces.find((n) => n.name === name);
+const hostOpt = (v) => ({ value: v, label: v, hint: /^[0-9.\/:]+$/.test(v) ? 'address' : 'host' });
+const portOpt = (v) => ({ value: v, label: v, hint: '' });
+
+const srcNs = new Picker($('#srcNs'), { placeholder: 'Namespace', onChange: () => { fillSrcWl(); syncCli(); } });
+const srcWl = new Picker($('#srcWl'), { placeholder: 'Workload', onChange: syncCli });
+const dstNs = new Picker($('#dstNs'), { placeholder: 'Namespace', onChange: () => { fillDstName(); syncCli(); } });
+const dstName = new Picker($('#dstName'), { placeholder: 'Service', onChange: () => { fillDstPort(); syncCli(); }, custom: hostOpt });
+const dstPort = new Picker($('#dstPort'), { placeholder: 'any', onChange: syncCli, custom: portOpt });
+const pNs = new Picker($('#pNs'), { placeholder: 'All namespaces', onChange: () => renderPolicies() });
+
+const wlOptions = (ns) => (ns ? ns.workloads : []).map((w) => ({ value: `${w.kind}/${w.name}`, label: `${w.kind}/${w.name}`, hint: `${w.pods} pod${w.pods === 1 ? '' : 's'}`, w }));
+function fillSrcWl() { srcWl.setOptions(wlOptions(nsOf(srcNs.value))); if (srcWl.options.length === 1) srcWl.set(srcWl.options[0].value, true); }
+function fillDstName() {
+  const kind = state.dstKind;
+  $('#dstNsField').style.display = kind === 'internet' ? 'none' : '';
+  $('#dstNameLabel').textContent = { service: 'Service', workload: 'Workload', internet: 'Host' }[kind];
+  dstName.placeholder = kind === 'internet' ? 'Any host, or type one' : $('#dstNameLabel').textContent;
+  dstName.custom = kind === 'internet' ? hostOpt : null;
+  let opts;
+  if (kind === 'internet') {
+    opts = [{ value: 'internet', label: 'Any host (the internet)', hint: '' }].concat((state.refs?.externals || []).map((x) => ({ ...hostOpt(x), hint: 'in a policy' })));
+  } else {
+    const ns = nsOf(dstNs.value);
+    opts = kind === 'service'
+      ? (ns ? ns.services : []).map((s) => ({ value: s.name, label: s.name, hint: s.type === 'ExternalName' ? 'ExternalName' : (s.ports.map((p) => p.port).join(', ') || s.type), s }))
+      : wlOptions(ns);
+  }
+  dstName.setOptions(opts);
+  if (kind === 'internet' && !dstName.value) dstName.set('internet', true);
+  else if (opts.length === 1) dstName.set(opts[0].value, true);
+  fillDstPort();
+}
+function fillDstPort() {
+  const o = dstName.current();
+  let opts = [{ value: '', label: 'any port', hint: '' }];
+  if (o && o.s) opts = opts.concat(o.s.ports.map((p) => ({ value: String(p.port), label: `${p.port}/${p.protocol}${p.name ? ' (' + p.name + ')' : ''}`, hint: `→ ${p.targetPort}` })));
+  if (o && o.w) opts = opts.concat(o.w.ports.map((p) => ({ value: String(p), label: String(p), hint: 'container port' })));
+  if (state.dstKind === 'internet') opts = opts.concat([443, 80, 53].map((p) => ({ value: String(p), label: String(p), hint: '' })));
+  dstPort.custom = state.dstKind === 'internet' ? portOpt : null;
+  dstPort.setOptions(opts);
+  if (opts.length === 2) dstPort.set(opts[1].value, true); else if (!dstPort.value) dstPort.set('', true);
+}
+function refsOf() {
+  const src = srcNs.value && srcWl.value ? `${srcNs.value}/${srcWl.value}` : '';
+  const dst = state.dstKind === 'internet' ? (dstName.value || '') : (dstNs.value && dstName.value ? `${dstNs.value}/${dstName.value}` : '');
+  return { src, dst, port: dstPort.value || '' };
+}
+function syncCli() {
+  const { src, dst, port } = refsOf();
+  $('#cli').textContent = `kubectl npmap path ${src || '<source>'} ${dst || '<destination>'}${port ? ':' + port : ''}${state.dstKind === 'internet' && dst && dst !== 'internet' && !/^[0-9.\/]+$/.test(dst) ? ' --resolve-fqdn' : ''}`;
+  $('#run').disabled = !(src && dst);
+}
+
+/* ---------- data ---------- */
+async function api(url) {
+  const r = await fetch(url);
+  const body = await r.json().catch(() => ({ error: `${r.status} ${r.statusText}` }));
+  if (!r.ok) throw new Error(body.error || `${r.status} ${r.statusText}`);
+  return body;
+}
+async function loadRefs(refresh = false) {
+  const btn = $('#refresh'); btn.disabled = true; btn.querySelector('span').textContent = 'Loading…';
+  try {
+    state.refs = await api('/api/refs' + (refresh ? '?refresh=1' : ''));
+    state.loadedAt = Date.now();
+    $('#ctx').innerHTML = `context <b>${esc(state.refs.context || '—')}</b>`;
+    $('#stats').textContent = `${state.refs.namespaces.length} namespaces · ${state.refs.podCount} pods · ${state.refs.policyCount} policies${state.refs.meshFetched ? '' : ' · mesh not read'}`;
+    const nsOpts = state.refs.namespaces.map((n) => ({ value: n.name, label: n.name, hint: `${n.workloads.length} wl · ${n.services.length} svc` }));
+    srcNs.setOptions(nsOpts); dstNs.setOptions(nsOpts);
+    pNs.setOptions([{ value: '', label: 'All namespaces' }].concat(nsOpts)); if (!pNs.value) pNs.set('', true);
+    fillSrcWl(); fillDstName(); syncCli();
+    $('#traceError').innerHTML = '';
+    await loadPolicies();
+  } catch (e) {
+    $('#traceError').innerHTML = $('#policiesError').innerHTML = `<div class="error">Could not read the cluster: ${esc(e.message)}</div>`;
+  } finally { btn.disabled = false; btn.querySelector('span').textContent = 'Refresh'; }
+}
+
+/* ---------- policies: overview map ---------- */
+async function loadPolicies() {
+  const [r, findings] = await Promise.all([api('/api/policies'), api('/api/lint').catch(() => [])]);
+  state.policies = r.policies; state.coverage = r.coverage; state.findings = findings; state.pFocus = null; state.denies = null;
+  if (state.pSelected && !state.policies.some((p) => p.key === state.pSelected)) state.pSelected = null;
+  renderPolicies();
+}
+function visiblePolicies() {
+  const q = ($('#pSearch').value || '').toLowerCase();
+  return state.policies.filter((p) => (!state.pKind || p.kind.startsWith(state.pKind)) && (!q || [p.key, p.selector, ...p.selected.map(keyOf), ...[...p.ingress, ...p.egress].flatMap((r) => r.peers.flatMap((x) => [x.label, ...(x.matches || []).map(keyOf)]))].join(' ').toLowerCase().includes(q)));
+}
+function renderPolicies() {
+  const cov = state.coverage; const vis = visiblePolicies();
+  const unprotected = cov.unprotected.length;
+  $('#pChips').innerHTML = `
+    <span class="pill"><b>${state.policies.length}</b> policies</span>
+    <span class="pill accent"><b>${cov.isolatedIngress}</b> workloads ingress-isolated</span>
+    <span class="pill accent"><b>${cov.isolatedEgress}</b> egress-isolated</span>
+    <span class="pill ${unprotected ? 'warn' : 'ok'} click" id="pUnprot" title="click to list"><b>${unprotected}</b> of ${cov.workloads} workloads touched by no policy (default-allow)</span>
+    ${state.denies && !state.denies.loading ? `<span class="pill fail"><b>${state.denies.edges.length}</b> denied workload pairs${showing().has('deny') ? '' : ' (hidden: tick “denied”)'}</span>` : ''}
+    ${state.findings.length ? `<span class="pill ${state.findings.some((f) => f.Severity !== 'info') ? 'warn' : ''} click" id="pLint" title="click to list"><b>${state.findings.length}</b> lint finding${state.findings.length === 1 ? '' : 's'}</span>` : ''}
+    ${vis.length !== state.policies.length ? `<span class="pill">${vis.length} shown</span>` : ''}
+    ${pNs.value ? `<span class="pill accent">namespace ${esc(pNs.value)} and its peers</span>` : ''}`;
+  $('#pLint')?.addEventListener('click', () => {
+    $('#pDetail').innerHTML = `<h3>Lint findings</h3>${findingsHTML(state.findings)}`;
+  });
+  $('#pUnprot').addEventListener('click', () => {
+    $('#pDetail').innerHTML = `<h3>Workloads no policy selects — all traffic allowed</h3>${cov.unprotected.length ? cov.unprotected.map((w) => `<div class="center" style="border-width:1px;border-color:var(--warn);margin-bottom:6px;padding:6px 10px"><span class="mono">${esc(keyOf(w))}</span> <span class="badge">${w.pods} pods</span></div>`).join('') : '<div class="empty">Every workload is selected by at least one policy.</div>'}`;
+  });
+  renderPolicyMap(vis); renderPolicyList(vis);
+  if (state.pSelected) renderPolicyDetail(state.policies.find((p) => p.key === state.pSelected));
+}
+// Evaluated verdicts that are not ALLOW, overlaid on the intent map. Loaded
+// once per namespace filter; the policy map re-renders when they arrive.
+const deniesKey = () => `${pNs.value || '*'}:${$('#pPort').value || ''}`;
+async function loadDenies() {
+  const ns = pNs.value, key = deniesKey(), port = `port=${encodeURIComponent($('#pPort').value || '')}`;
+  if (state.denies && state.denies.key === key) return;
+  const urls = ns ? [`/api/matrix?from=${encodeURIComponent(ns)}&${port}`, `/api/matrix?to=${encodeURIComponent(ns)}&${port}`] : [`/api/matrix?${port}`];
+  state.denies = { key, edges: [], loading: true };
+  try {
+    const seen = new Set(); const edges = [];
+    for (const r of await Promise.all(urls.map(api))) r.edges.forEach((e) => { const k = keyOf(e.from) + '|' + keyOf(e.to); if (e.status !== 'allow' && !seen.has(k)) { seen.add(k); edges.push(e); } });
+    state.denies = { key, edges };
+  } catch (e) { state.denies = { key, edges: [], error: e.message }; }
+  renderPolicies();
+}
+function buildPolicyGraph(policies) {
+  const nodes = new Map(); const extIn = new Map(); const extOut = new Map(); const edges = new Map();
+  state.refs.namespaces.forEach((n) => n.workloads.forEach((w) => { const k = `${n.name}/${w.kind}/${w.name}`; nodes.set(k, { key: k, ns: n.name, kind: w.kind, name: w.name, I: false, E: false, touched: false }); }));
+  const ensure = (a) => { const k = keyOf(a); if (!nodes.has(k)) nodes.set(k, { key: k, ...a, I: false, E: false, touched: false }); return nodes.get(k); };
+  const showExt = $('#pExt').checked;
+  const extNode = (store, peer, prefix) => { if (!showExt) return null; const k = prefix + peer.label; if (!store.has(k)) store.set(k, { key: k, kind: peer.type, name: peer.label, ext: true }); return store.get(k); };
+  // Port filter: a rule counts when it covers the port ("any", the number,
+  // a range) or names a port we could not resolve.
+  const want = parseInt($('#pPort').value, 10);
+  const portOK = (ports) => !want || ports.some((p) => { const [v] = p.split('/'); if (v === 'any') return true; const [lo, hi] = v.split('-').map(Number); return isNaN(lo) || (hi ? want >= lo && want <= hi : want === lo); });
+  const addEdge = (a, b, p, rule, dir) => {
+    if (!a || !b || !portOK(rule.ports)) return;
+    const k = `${a.key}|${b.key}|${rule.deny ? 'deny' : 'allow'}`;
+    if (!edges.has(k)) edges.set(k, { a: a.key, b: b.key, status: rule.deny ? 'deny' : 'allow', lines: [] });
+    edges.get(k).lines.push(`${p.kind === 'NetworkPolicy' ? 'NP' : p.kind === 'CiliumNetworkPolicy' ? 'CNP' : 'CCNP'} ${p.namespace ? p.namespace + '/' : ''}${p.name} · ${dir} · ${rule.ports.join(', ')}${rule.l7 ? ' · L7' : ''}`);
+  };
+  policies.forEach((p) => {
+    const sel = p.selected.map(ensure);
+    sel.forEach((n) => { n.touched = true; n.I = n.I || p.isolatesIngress; n.E = n.E || p.isolatesEgress; });
+    p.ingress.forEach((rule) => rule.peers.forEach((peer) => {
+      const srcs = peer.type === 'pods' || peer.type === 'namespace' ? (peer.matches || []).map(ensure) : [extNode(extIn, peer, 'in:')];
+      srcs.forEach((s) => sel.forEach((t) => addEdge(s, t, p, rule, 'ingress')));
+    }));
+    p.egress.forEach((rule) => rule.peers.forEach((peer) => {
+      const dsts = peer.type === 'pods' || peer.type === 'namespace' ? (peer.matches || []).map(ensure) : [extNode(extOut, peer, 'out:')];
+      sel.forEach((s) => dsts.forEach((t) => addEdge(s, t, p, rule, 'egress')));
+    }));
+  });
+  // Overlay what the evaluator says is not allowed: a pair that a rule opens
+  // but the other side blocks turns amber; a pair no rule opens turns red.
+  if (needsEval() && state.denies && !state.denies.loading) {
+    state.denies.edges.forEach((d) => {
+      const a = ensure(d.from), b = ensure(d.to);
+      const line = `evaluated: ${d.verdict} — ${d.reason}`;
+      const intent = edges.get(`${a.key}|${b.key}|allow`);
+      if (intent) { intent.status = d.status === 'deny' ? 'blocked' : d.status; intent.lines.push(line); return; }
+      const k = `${a.key}|${b.key}|eval`;
+      if (!edges.has(k)) edges.set(k, { a: a.key, b: b.key, status: d.status, lines: [line], from: d.from, to: d.to });
+    });
+  }
+  // Edge-type filter from the legend checkboxes.
+  const show = showing();
+  const kind = (s) => s === 'partial' || s === 'unknown' ? 'uncertain' : s;
+  let kept = [...edges.values()].filter((e) => show.has(kind(e.status)));
+  // Namespace filter: keep that namespace's workloads, every edge touching
+  // them, and the peers on the other end of those edges.
+  const ns = pNs.value;
+  if (ns) {
+    const keep = new Set([...nodes.values()].filter((n) => n.ns === ns).map((n) => n.key));
+    kept = kept.filter((e) => keep.has(e.a) || keep.has(e.b));
+    kept.forEach((e) => { keep.add(e.a); keep.add(e.b); });
+    return { nodes: new Map([...nodes].filter(([k]) => keep.has(k))), extIn: [...extIn.values()].filter((n) => keep.has(n.key)), extOut: [...extOut.values()].filter((n) => keep.has(n.key)), edges: kept };
+  }
+  return { nodes, extIn: [...extIn.values()], extOut: [...extOut.values()], edges: kept };
+}
+const showing = () => new Set([...document.querySelectorAll('#pShow input:checked')].map((i) => i.value));
+// Evaluated verdicts are only needed when a non-allow edge type is shown.
+const needsEval = () => { const s = showing(); return s.has('deny') || s.has('blocked') || s.has('uncertain'); };
+/* zoom + export, shared by both maps */
+document.querySelectorAll('.zoom').forEach((z) => z.addEventListener('input', () => { const svg = $('#' + z.dataset.map + ' svg'); if (svg) svg.style.zoom = z.value / 100; }));
+document.querySelectorAll('[data-dl]').forEach((b) => b.addEventListener('click', () => downloadSVG(b.dataset.dl)));
+function downloadSVG(mapId) {
+  const svg = $('#' + mapId + ' svg'); if (!svg) return;
+  const clone = svg.cloneNode(true);
+  // Inline the computed colours so the file renders outside the page (CSS variables do not travel).
+  const src = svg.querySelectorAll('*'), dst = clone.querySelectorAll('*');
+  src.forEach((el, i) => {
+    const cs = getComputedStyle(el);
+    ['fill', 'fill-opacity', 'stroke', 'stroke-width', 'stroke-dasharray', 'opacity', 'font-size', 'font-weight', 'font-family', 'letter-spacing', 'text-transform'].forEach((p) => { const v = cs.getPropertyValue(p); if (v) dst[i].style.setProperty(p, v); });
+    if (el.tagName === 'rect' && cs.getPropertyValue('rx')) dst[i].setAttribute('rx', parseFloat(cs.getPropertyValue('rx')) || 0);
+  });
+  clone.style.zoom = ''; clone.style.background = getComputedStyle($('#' + mapId)).backgroundColor;
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  const blob = new Blob([clone.outerHTML], { type: 'image/svg+xml' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `npmap-${mapId === 'pmap' ? 'policies' : 'reachability'}.svg`; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+/* Layout: each namespace group has a free x/y position. Groups start in a
+   row; the user drags them anywhere and the positions are kept per cluster. */
+const layoutKey = (mapId) => `npmap-layout-${state.refs?.context || ''}-${mapId}`;
+state.layout = {};
+function savedLayout(mapId) {
+  if (!state.layout[mapId]) { try { state.layout[mapId] = JSON.parse(localStorage.getItem(layoutKey(mapId)) || '{}'); } catch { state.layout[mapId] = {}; } }
+  return state.layout[mapId];
+}
+// Card geometry: a header with icon and title, then one bordered row per
+// workload. Card edges are where connectors attach.
+const CARD = { w: 272, pad: 10, hdr: 46, row: 38, gap: 8 };
+function layoutColumns(mapId, columns, { colW = 340, top = 28, left = 28 } = {}) {
+  const saved = savedLayout(mapId);
+  let width = 0, height = 0;
+  columns.forEach((c, ci) => {
+    const p = saved[c.title];
+    c.x = p ? p.x : left + ci * colW; c.y = p ? p.y : top;
+    c.bx = c.x; c.by = c.y; c.bw = CARD.w; c.bh = CARD.hdr + Math.max(c.nodes.length, 1) * (CARD.row + CARD.gap) + CARD.pad - CARD.gap + 4;
+    c.nodes.forEach((n, ri) => { n.x = c.x + CARD.pad; n.y = c.y + CARD.hdr + ri * (CARD.row + CARD.gap); n.w = CARD.w - 2 * CARD.pad; n.h = CARD.row; n.col = ci; n.cx = c.x; n.cw = CARD.w; });
+    width = Math.max(width, c.bx + c.bw); height = Math.max(height, c.by + c.bh);
+  });
+  return { width: width + 40, height: height + 90, columns, top, left, colW };
+}
+// Connectors leave a row at its card's edge, run straight, converge in a
+// short elbow before the target card, and end on the target row. When a
+// card is in the way the line is routed around it.
+function edgePath(a, b, L, i = 0) {
+  const mid = (n) => n.y + n.h / 2;
+  const ma = mid(a), mb = mid(b), r = 10;
+  if (a.col === b.col) { const k = 34 + Math.abs(ma - mb) * 0.12; const x = a.cx + a.cw; return `M${x},${ma} L${x + 14},${ma} L${x + k},${ma + (mb - ma) * 0.3} L${x + k},${mb - (mb - ma) * 0.3} L${x + 14},${mb} L${x},${mb}`; }
+  const sideBySide = a.cx + a.cw < b.cx || b.cx + b.cw < a.cx;
+  if (!sideBySide) {
+    const down = a.y < b.y ? 1 : -1;
+    const sx = a.x + a.w / 2, tx = b.x + b.w / 2, sy = down > 0 ? a.y + a.h : a.y, ty = down > 0 ? b.y : b.y + b.h;
+    const dy = Math.max(24, Math.abs(ty - sy) / 2) * down;
+    return `M${sx},${sy} C${sx},${sy + dy} ${tx},${ty - dy} ${tx},${ty}`;
+  }
+  const dir = a.cx < b.cx ? 1 : -1;
+  const sx = dir > 0 ? a.cx + a.cw : a.cx, tx = dir > 0 ? b.cx : b.cx + b.cw;
+  const lo = Math.min(sx, tx), hi = Math.max(sx, tx), yTop = Math.min(ma, mb), yBot = Math.max(ma, mb);
+  const blocking = L.columns.filter((c, ci) => ci !== a.col && ci !== b.col && c.bx < hi && c.bx + c.bw > lo && c.by < yBot + 12 && c.by + c.bh > yTop - 12);
+  if (!blocking.length) { const el = Math.min(48, Math.abs(tx - sx) / 3); return `M${sx},${ma} L${sx + dir * 18},${ma} L${tx - dir * el},${mb} L${tx},${mb}`; }
+  const lane = Math.max(...blocking.map((c) => c.by + c.bh), a.y + a.h, b.y + b.h) + 18 + (i % 10) * 5;
+  const ox = sx + dir * (16 + (i % 10) * 3), ix = tx - dir * (16 + (i % 10) * 3);
+  return `M${sx},${ma} L${ox - dir * r},${ma} Q${ox},${ma} ${ox},${ma + r} L${ox},${lane - r} Q${ox},${lane} ${ox + dir * r},${lane} L${ix - dir * r},${lane} Q${ix},${lane} ${ix},${lane - r} L${ix},${mb + r} Q${ix},${mb} ${ix + dir * r},${mb} L${tx},${mb}`;
+}
+// Where a connector meets a card edge: a short coloured stub, like the
+// editor's port handles.
+function edgeStubs(a, b, status) {
+  const mid = (n) => n.y + n.h / 2;
+  const sideBySide = a.cx + a.cw < b.cx || b.cx + b.cw < a.cx || a.col === b.col;
+  if (!sideBySide) return '';
+  const dir = a.col === b.col ? 1 : a.cx < b.cx ? 1 : -1;
+  const sx = dir > 0 ? a.cx + a.cw : a.cx, tx = a.col === b.col ? b.cx + b.cw : dir > 0 ? b.cx : b.cx + b.cw;
+  return `<rect class="stub ${status}" x="${sx - 3}" y="${mid(a) - 7}" width="6" height="14"/><rect class="stub ${status}" x="${tx - 3}" y="${mid(b) - 7}" width="6" height="14"/>`;
+}
+const edgeColor = (s) => s === 'allow' ? 'var(--edge-allow)' : s === 'deny' ? 'var(--edge-deny)' : 'var(--edge-warn)';
+const markers = ['allow', 'deny', 'partial', 'unknown', 'blocked'].map((s) => `<marker id="arr-${s}" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L12,6 L0,12 z" fill="${edgeColor(s)}"/></marker>`).join('')
+  + '<filter id="cardShadow" x="-15%" y="-15%" width="130%" height="140%"><feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#0b1a33" flood-opacity=".28"/></filter>';
+const cardIcon = (c) => c.ext ? 'ico-globe' : c.title === 'kube-system' ? 'ico-cluster' : 'ico-ns';
+function columnSvg(c) {
+  return `<g class="colgroup${drag.title === c.title ? ' dragging' : ''}" data-title="${esc(c.title)}"><rect class="cardbg${c.ext ? ' ext' : ''}" x="${c.bx}" y="${c.by}" width="${c.bw}" height="${c.bh}"/>
+    <use href="#${cardIcon(c)}" x="${c.x + 12}" y="${c.y + 11}" width="24" height="24"/><text class="hdr" x="${c.x + 44}" y="${c.y + 29}">${esc(c.title)}</text>
+    <line class="hdrline" x1="${c.x}" y1="${c.y + CARD.hdr - 6}" x2="${c.x + c.bw}" y2="${c.y + CARD.hdr - 6}"/>${c.nodes.map((n) => nodeSvg(n)).join('')}</g>`;
+}
+/* Dragging a group moves it in both directions and redraws the whole map
+   (edges included) on every frame; the position is saved on release. */
+const drag = { mapId: null, title: null };
+function enableColumnDrag(map, mapId, columns, rerender) {
+  map.querySelectorAll('.colgroup').forEach((g) => g.querySelector('.cardbg').addEventListener('mousedown', (ev) => {
+    const c = columns.find((x) => x.title === g.dataset.title);
+    const zoom = parseFloat(map.querySelector('svg').style.zoom) || 1;
+    Object.assign(drag, { mapId, title: c.title, x0: ev.clientX, y0: ev.clientY, ox: c.x, oy: c.y, zoom, rerender, moved: false });
+    ev.preventDefault();
+  }));
+}
+document.addEventListener('mousemove', (ev) => {
+  if (!drag.title || drag.pending) return;
+  drag.pending = true;
+  requestAnimationFrame(() => {
+    drag.pending = false;
+    if (!drag.title) return;
+    const layout = savedLayout(drag.mapId);
+    layout[drag.title] = { x: Math.max(32, drag.ox + (ev.clientX - drag.x0) / drag.zoom), y: Math.max(58, drag.oy + (ev.clientY - drag.y0) / drag.zoom) };
+    drag.moved = true;
+    drag.rerender();
+  });
+});
+document.addEventListener('mouseup', () => {
+  if (!drag.title) return;
+  const { mapId, moved, rerender } = drag;
+  drag.title = null;
+  if (moved) { try { localStorage.setItem(layoutKey(mapId), JSON.stringify(savedLayout(mapId))); } catch {} }
+  rerender();
+});
+document.querySelectorAll('[data-reset]').forEach((b) => b.addEventListener('click', () => {
+  state.layout[b.dataset.reset] = {};
+  try { localStorage.removeItem(layoutKey(b.dataset.reset)); } catch {}
+  renderPolicies();
+}));
+function nodeSvg(n) {
+  const max = n.ext ? 30 : 22;
+  const name = n.name.length > max ? n.name.slice(0, max - 1) + '…' : n.name;
+  const kind = n.ext ? '' : `<text x="${n.w - 10}" y="24" class="kind" text-anchor="end">${esc(n.kind)}</text>`;
+  return `<g class="node${n.ext ? ' ext' : ''}${n.touched === false ? ' dim' : ''}" data-key="${esc(n.key)}" transform="translate(${n.x},${n.y})"><rect width="${n.w}" height="${n.h}"/><text x="11" y="24">${esc(name)}</text>${kind}</g>`;
+}
+function renderPolicyMap(policies) {
+  const map = $('#pmap');
+  if (needsEval() && (!state.denies || state.denies.key !== deniesKey())) loadDenies();
+  const g = buildPolicyGraph(policies);
+  const byNs = {};
+  g.nodes.forEach((n) => (byNs[n.ns] ||= []).push(n));
+  const columns = [];
+  if (g.extIn.length) columns.push({ title: 'external sources', ext: true, nodes: g.extIn });
+  Object.keys(byNs).sort().forEach((ns) => columns.push({ title: ns, nodes: byNs[ns].sort((a, b) => a.name.localeCompare(b.name)) }));
+  if (g.extOut.length) columns.push({ title: 'external destinations', ext: true, nodes: g.extOut });
+  if (!columns.length) { map.innerHTML = '<div class="empty">No workloads found.</div>'; return; }
+  const L = layoutColumns('pmap', columns);
+  const all = new Map(); columns.forEach((c) => c.nodes.forEach((n) => all.set(n.key, n)));
+  const parts = [`<defs>${markers}</defs>`, '<g class="edges">'];
+  g.edges.forEach((e, i) => parts.push(`<path class="edge ${e.status}" data-i="${i}" data-a="${esc(e.a)}" data-b="${esc(e.b)}" d="${edgePath(all.get(e.a), all.get(e.b), L, i)}" marker-end="url(#arr-${e.status})"/>`));
+  parts.push('</g>');
+  columns.forEach((c) => parts.push(columnSvg(c)));
+  parts.push('<g class="stubs">' + g.edges.map((e) => edgeStubs(all.get(e.a), all.get(e.b), e.status)).join('') + '</g>');
+  const scroll = [map.scrollLeft, map.scrollTop];
+  map.classList.remove('focused');
+  map.innerHTML = `<svg width="${L.width}" height="${L.height}">${parts.join('')}</svg>`;
+  map.querySelector('svg').style.zoom = $('.zoom[data-map=pmap]').value / 100;
+  [map.scrollLeft, map.scrollTop] = scroll;
+  enableColumnDrag(map, 'pmap', columns, () => renderPolicyMap(policies));
+  map.querySelectorAll('.edge').forEach((p) => {
+    const e = g.edges[+p.dataset.i];
+    const label = { allow: 'ALLOWED BY A RULE', deny: 'DENIED', blocked: 'RULE EXISTS, STILL DENIED', partial: 'PARTIAL', unknown: 'UNKNOWN' }[e.status];
+    p.addEventListener('mousemove', (ev) => showTip(ev, `<div class="t">${esc(e.a.replace(/^(in|out):/, ''))} → ${esc(e.b.replace(/^(in|out):/, ''))}</div><span class="pill ${PILL[e.status]}">${label}</span>${e.lines.map((l) => `<div class="l mono">${esc(l)}</div>`).join('')}`));
+    p.addEventListener('mouseleave', hideTip);
+    p.addEventListener('click', () => {
+      if (e.from) { traceEdge(e); return; } // evaluated-only edge: explain it in Trace
+      const name = e.lines[0].split(' · ')[0].replace(/^(NP|CNP|CCNP) /, ''); const pol = policies.find((x) => (x.namespace ? x.namespace + '/' : '') + x.name === name); if (pol) selectPolicy(pol.key);
+    });
+  });
+  map.querySelectorAll('.node').forEach((n) => n.addEventListener('click', () => focusMap(map, 'pFocus', n.dataset.key, () => { showWorkloadPolicies(n.dataset.key, policies); renderPolicyFlows(g.edges); })));
+  renderPolicyFlows(g.edges);
+}
+function focusMap(map, slot, key, after) {
+  state[slot] = state[slot] === key ? null : key;
+  const f = state[slot];
+  map.classList.toggle('focused', !!f);
+  map.querySelectorAll('.edge').forEach((p) => p.classList.toggle('focus', p.dataset.a === f || p.dataset.b === f));
+  const touched = new Set(); map.querySelectorAll('.edge.focus').forEach((p) => { touched.add(p.dataset.a); touched.add(p.dataset.b); });
+  map.querySelectorAll('.node').forEach((g) => g.classList.toggle('focus', g.dataset.key === f || touched.has(g.dataset.key)));
+  if (after) after(f);
+}
+function showWorkloadPolicies(key, policies) {
+  if (!key) return;
+  const sel = policies.filter((p) => p.selected.some((w) => keyOf(w) === key));
+  const peer = policies.filter((p) => [...p.ingress, ...p.egress].some((r) => r.peers.some((x) => (x.matches || []).some((w) => keyOf(w) === key))));
+  $('#pDetail').innerHTML = `<h3>${esc(key)}</h3>
+    <div class="center" style="margin-bottom:10px"><div class="title">Selected by ${sel.length} polic${sel.length === 1 ? 'y' : 'ies'}</div>${sel.length ? sel.map((p) => `<div class="wl"><a href="#" data-p="${esc(p.key)}">${esc(p.key)}</a> ${p.isolatesIngress ? '<span class="badge i">I</span>' : ''} ${p.isolatesEgress ? '<span class="badge e">E</span>' : ''}</div>`).join('') : '<div class="note">no policy selects it: all traffic is allowed by default</div>'}</div>
+    <div class="center" style="border-color:var(--border-2)"><div class="title">Named as a peer by ${peer.length} polic${peer.length === 1 ? 'y' : 'ies'}</div>${peer.map((p) => `<div class="wl"><a href="#" data-p="${esc(p.key)}">${esc(p.key)}</a></div>`).join('') || '<div class="note">no other policy mentions it</div>'}</div>`;
+  $('#pDetail').querySelectorAll('[data-p]').forEach((a) => a.addEventListener('click', (ev) => { ev.preventDefault(); selectPolicy(a.dataset.p); }));
+}
+// Lint findings that mention a policy (subjects are "ns/name", sometimes a pair).
+const findingsFor = (p) => state.findings.filter((f) => f.Subject.split(/[\s,+]+/).includes((p.namespace ? p.namespace + '/' : '') + p.name));
+const sevClass = { error: 'deny', warning: 'l7', info: '' };
+const findingBadges = (p) => findingsFor(p).map((f) => `<span class="badge ${sevClass[f.Severity] || ''}" title="${esc(f.Message)}">${esc(f.Code)}</span>`).join('');
+const findingsHTML = (fs) => fs.length ? fs.map((f) => `<div class="finding ${f.Severity}"><span class="badge ${sevClass[f.Severity] || ''}">${esc(f.Code)}</span> <span class="mono">${esc(f.Subject)}</span><div>${esc(f.Message)}</div>${f.Hint ? `<div class="note">${esc(f.Hint)}</div>` : ''}</div>`).join('') : '<div class="empty">✓ No findings.</div>';
+function renderPolicyList(policies) {
+  const kindBadge = (k) => k === 'NetworkPolicy' ? '<span class="badge std">NP</span>' : k === 'CiliumNetworkPolicy' ? '<span class="badge cil">CNP</span>' : '<span class="badge cil">CCNP</span>';
+  $('#pList').innerHTML = policies.length ? policies.map((p) => {
+    const denies = [...p.ingress, ...p.egress].filter((r) => r.deny).length; const l7 = [...p.ingress, ...p.egress].some((r) => r.l7);
+    return `<div class="pitem${p.key === state.pSelected ? ' active' : ''}" data-p="${esc(p.key)}">
+      <div class="name">${kindBadge(p.kind)} ${esc((p.namespace ? p.namespace + '/' : '') + p.name)}</div>
+      <div class="badges">${p.isolatesIngress ? '<span class="badge i">I</span>' : ''}${p.isolatesEgress ? '<span class="badge e">E</span>' : ''}${denies ? `<span class="badge deny">${denies} deny</span>` : ''}${l7 ? '<span class="badge l7">L7</span>' : ''}${findingBadges(p)}</div>
+      <div class="meta">selects ${esc(p.selector)} → ${p.selected.length} workload${p.selected.length === 1 ? '' : 's'} · ${p.ingress.length} ingress / ${p.egress.length} egress rules</div></div>`;
+  }).join('') : '<div class="empty">No policies match.</div>';
+  $('#pList').querySelectorAll('.pitem').forEach((el) => el.addEventListener('click', () => selectPolicy(el.dataset.p)));
+}
+function selectPolicy(key) {
+  state.pSelected = key;
+  $('#pList').querySelectorAll('.pitem').forEach((el) => el.classList.toggle('active', el.dataset.p === key));
+  renderPolicyDetail(state.policies.find((p) => p.key === key));
+  $('#pDetail').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+// A rule card in the editor style: header with icon and where the peers live,
+// one bordered row per peer with the ports as a badge on the right.
+function ruleCard(r, i, side, policyNS) {
+  const external = r.peers.every((x) => ['cidr', 'fqdn', 'entity', 'service'].includes(x.type));
+  const sameNS = r.peers.every((x) => x.type === 'pods' && (x.matches || []).every((w) => w.ns === policyNS) && !/in namespaces/.test(x.label));
+  const [ico, title] = r.peers.every((x) => x.type === 'any') ? ['ico-globe', 'Anywhere'] : external ? ['ico-globe', 'Outside cluster'] : sameNS ? ['ico-ns', 'In namespace'] : ['ico-cluster', 'In cluster'];
+  const ports = r.ports.map((p) => p === 'any' ? 'any port' : p).join(', ');
+  const rows = r.peers.map((x) => `<div class="prow"><div><div>${esc(x.label)}</div>${x.matches ? `<div class="m">${x.matches.length ? '↳ ' + x.matches.slice(0, 5).map(keyOf).join(', ') + (x.matches.length > 5 ? ` +${x.matches.length - 5}` : '') : '↳ matches no workload'}</div>` : ''}</div><span class="pb">${side === 'in' ? '→' : '→'} ${esc(ports)}</span></div>`).join('');
+  return `<div class="ecard${r.deny ? ' deny' : ''}" data-side="${side}" data-i="${i}"><div class="rhdr"><svg class="ico"><use href="#${ico}"/></svg>${title}<span class="sp"></span>${r.deny ? '<span class="badge deny">DENY</span>' : ''}${r.l7 ? '<span class="badge l7">L7</span>' : ''}</div>${rows}</div>`;
+}
+function renderPolicyDetail(p) {
+  if (!p) return;
+  const d = $('#pDetail');
+  const fs = findingsFor(p);
+  const lock = (dir, isolated) => `<span class="pill ${isolated ? 'fail' : 'ok'}">${dir}: ${isolated ? 'default deny' : 'default allow'}</span>`;
+  const denyAll = (dir) => `<div class="ecard deny" data-side="${dir === 'ingress' ? 'in' : 'out'}"><div class="rhdr"><svg class="ico"><use href="#ico-globe"/></svg>Nothing<span class="sp"></span><span class="badge deny">DENY ALL</span></div><div class="note">${dir} is isolated and no rule allows anything</div></div>`;
+  d.innerHTML = `<svg class="connectors"></svg>${fs.length ? `<div style="margin-bottom:14px">${findingsHTML(fs)}</div>` : ''}<div class="cols">
+    <div class="col"><h4><span>Ingress · allowed sources</span></h4>${p.isolatesIngress ? (p.ingress.length ? p.ingress.map((r, i) => ruleCard(r, i, 'in', p.namespace)).join('') : denyAll('ingress')) : '<div class="note">this policy does not restrict ingress</div>'}</div>
+    <div class="col"><h4><span>Selected workloads</span></h4>
+      <div class="center" id="pCenter"><div class="rhdr"><svg class="ico"><use href="#${p.kind === 'CiliumClusterwideNetworkPolicy' ? 'ico-cluster' : 'ico-ns'}"/></svg>${esc((p.namespace ? p.namespace + '/' : '') + p.name)}</div><div class="sel">${esc(p.kind)} · selects ${esc(p.selector)}${p.kind === 'CiliumClusterwideNetworkPolicy' ? ' (cluster-wide)' : ''}</div>
+      <div class="locks">${lock('Ingress', p.isolatesIngress)}${lock('Egress', p.isolatesEgress)}</div>
+      ${p.selected.length ? p.selected.slice(0, 12).map((w) => `<div class="prow"><span>${esc(w.kind)}/${esc(w.name)}</span><span class="pb">${w.pods} pod${w.pods === 1 ? '' : 's'}</span></div>`).join('') + (p.selected.length > 12 ? `<div class="note">+${p.selected.length - 12} more</div>` : '') : '<div class="note">selects no running workload (stale selector?)</div>'}</div></div>
+    <div class="col"><h4><span>Egress · allowed destinations</span></h4>${p.isolatesEgress ? (p.egress.length ? p.egress.map((r, i) => ruleCard(r, i, 'out', p.namespace)).join('') : denyAll('egress')) : '<div class="note">this policy does not restrict egress</div>'}</div>
+  </div>`;
+  requestAnimationFrame(() => drawConnectors(d));
+}
+// Elbow connectors: out of the rule card, converge to a point before the
+// selected card, then straight in; stubs mark both ends.
+function drawConnectors(d) {
+  const svg = d.querySelector('.connectors'); const center = d.querySelector('#pCenter'); if (!svg || !center) return;
+  const box = d.getBoundingClientRect(); const c = center.getBoundingClientRect();
+  const rel = (r) => ({ left: r.left - box.left, right: r.right - box.left, top: r.top - box.top, bottom: r.bottom - box.top });
+  const C = rel(c); const cy = (C.top + C.bottom) / 2;
+  const paths = [], stubs = [];
+  const stub = (x, y, cls) => stubs.push(`<rect class="stub ${cls}" x="${x - 3}" y="${y - 7}" width="6" height="14" rx="2"/>`);
+  d.querySelectorAll('.ecard').forEach((el) => {
+    const R = rel(el.getBoundingClientRect()); const ry = (R.top + R.bottom) / 2; const cls = el.classList.contains('deny') ? 'deny' : 'allow';
+    if (el.dataset.side === 'in') { paths.push(`<path class="${cls}" d="M${R.right},${ry} L${R.right + 18},${ry} L${C.left - 44},${cy} L${C.left},${cy}" marker-end="url(#carr-${cls})"/>`); stub(R.right, ry, cls); }
+    else { paths.push(`<path class="${cls}" d="M${C.right},${cy} L${C.right + 44},${ry === cy ? cy : cy} L${R.left - 18},${ry} L${R.left},${ry}" marker-end="url(#carr-${cls})"/>`); stub(R.left, ry, cls); }
+  });
+  if (d.querySelector('.ecard[data-side=in]')) stub(C.left, cy, 'allow');
+  if (d.querySelector('.ecard[data-side=out]')) stub(C.right, cy, 'allow');
+  svg.setAttribute('width', box.width); svg.setAttribute('height', d.scrollHeight);
+  svg.innerHTML = `<defs>${['allow', 'deny'].map((s) => `<marker id="carr-${s}" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="9" markerHeight="9" orient="auto"><path d="M0,0 L12,6 L0,12 z" fill="${edgeColor(s)}"/></marker>`).join('')}</defs>${paths.join('')}${stubs.join('')}`;
+}
+
+/* ---------- trace ---------- */
+async function runTrace() {
+  const { src, dst, port } = refsOf();
+  if (!src || !dst) return;
+  const btn = $('#run'); btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Tracing…';
+  $('#traceError').innerHTML = '';
+  history.replaceState(null, '', `?src=${encodeURIComponent(src)}&dst=${encodeURIComponent(dst)}${port ? '&port=' + encodeURIComponent(port) : ''}&kind=${state.dstKind}`);
+  try {
+    renderTrace(await api(`/api/path?src=${encodeURIComponent(src)}&dst=${encodeURIComponent(dst)}&port=${encodeURIComponent(port)}`));
+  } catch (e) {
+    $('#traceResult').innerHTML = '';
+    $('#traceError').innerHTML = `<div class="error">${esc(e.message)}</div>`;
+  } finally { btn.disabled = false; btn.textContent = 'Trace connection'; }
+}
+function renderTrace(r) {
+  const via = r.external ? `outside the cluster: ${r.external} (static check; assumes outbound NAT)` : r.service ? `Service ${r.service.Namespace}/${r.service.Name} → ${r.dstPods.length} pod(s)` : `${r.dstPods.length} pod(s)`;
+  const sub = `${r.srcPods.length} source pod(s) → ${via}${r.targetPort && !r.external ? ` · policy evaluated at pod port ${r.targetPort}` : ''}`;
+  const layers = r.layers.map((l) => `
+    <div class="layer ${l.status}">
+      <div class="g ${l.status}">${GLYPH[l.status] || '?'}</div>
+      <div class="n">${esc(l.name)}</div>
+      <div class="s">${esc(l.summary)}${(l.detail || []).map((d) => `<div class="d">${esc(d)}</div>`).join('')}${l.fix ? `<div class="fix"><b>How to fix</b>${esc(l.fix)}</div>` : ''}</div>
+    </div>`).join('');
+  const pairs = (r.pairs || []).length > 1 ? `<details><summary>NetworkPolicy per pod pair (${r.pairs.length})</summary><table><tr><th>Source</th><th>Destination</th><th>Verdict</th><th>Reason</th></tr>${r.pairs.map((p) => {
+      const st = p.unknown ? 'unknown' : p.allowed ? 'ok' : 'fail';
+      const v = p.unknown ? 'UNKNOWN' : p.allowed ? 'ALLOW' + (p.ports && !(p.ports.length === 1 && p.ports[0] === '*') ? ' :' + p.ports.join(',') : '') : 'DENY';
+      return `<tr><td class="mono">${esc(p.src)}</td><td class="mono">${esc(p.dst)}</td><td><span class="pill ${st}">${esc(v)}</span></td><td>${esc(p.reason)}</td></tr>`;
+    }).join('')}</table></details>` : '';
+  $('#traceResult').innerHTML = `
+    <div class="verdict ${r.status}"><div class="glyph">${GLYPH[r.status]}</div><div><div class="big">${esc(r.verdict)}</div><div class="sub">${esc(sub)}</div></div></div>
+    <div class="card"><div class="layers">${layers}</div>${pairs}</div>`;
+}
+
+/* ---------- connections table under the policy map ---------- */
+const axisOf = (key) => { const [ns, kind, ...name] = key.split('/'); return { ns, kind, name: name.join('/') }; };
+const isWorkloadKey = (key) => !/^(in|out):/.test(key);
+function renderPolicyFlows(edges) {
+  const label = { allow: 'ALLOWED', deny: 'DENIED', blocked: 'RULE EXISTS, STILL DENIED', partial: 'PARTIAL', unknown: 'UNKNOWN' };
+  const focus = state.pFocus;
+  const rows = edges.map((e, i) => ({ e, i })).filter(({ e }) => !focus || e.a === focus || e.b === focus);
+  $('#pflowsSummary').textContent = `Connections drawn (${rows.length}${focus ? ', focused on ' + focus : ''})`;
+  $('#pflowsBody').innerHTML = rows.length ? `<table><tr><th>Source</th><th>Destination</th><th>Verdict</th><th>Why</th><th></th></tr>${rows.map(({ e, i }) => `
+    <tr data-i="${i}"><td class="mono">${esc(e.a.replace(/^(in|out):/, ''))}</td><td class="mono">${esc(e.b.replace(/^(in|out):/, ''))}</td>
+    <td><span class="pill ${PILL[e.status]}">${label[e.status]}</span></td><td class="mono" style="font-size:12px">${e.lines.map(esc).join('<br>')}</td>
+    <td>${isWorkloadKey(e.a) && isWorkloadKey(e.b) ? `<button class="btn small" data-trace="${i}">Trace →</button>` : ''}</td></tr>`).join('')}</table>` : '<div class="empty">Nothing drawn with the current filters.</div>';
+  $('#pflowsBody').querySelectorAll('[data-trace]').forEach((b) => b.addEventListener('click', () => { const e = edges[+b.dataset.trace]; traceEdge({ from: axisOf(e.a), to: axisOf(e.b) }); }));
+}
+function traceEdge(e) {
+  srcNs.set(e.from.ns, true); fillSrcWl(); srcWl.set(`${e.from.kind}/${e.from.name}`, true);
+  setKind('workload'); dstNs.set(e.to.ns, true); fillDstName(); dstName.set(`${e.to.kind}/${e.to.name}`, true); fillDstPort(); dstPort.set($('#pPort').value || '', true);
+  syncCli(); showTab('trace'); runTrace();
+}
+
+/* ---------- wiring ---------- */
+function showTab(name) {
+  document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === 'panel-' + name));
+  if (name === 'policies' && state.pSelected) requestAnimationFrame(() => drawConnectors($('#pDetail')));
+}
+function setKind(kind) {
+  state.dstKind = kind;
+  $('#dstKind').querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.kind === kind));
+  fillDstName(); syncCli();
+}
+document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => showTab(t.dataset.tab)));
+$('#dstKind').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => setKind(b.dataset.kind)));
+$('#pKind').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { state.pKind = b.dataset.k; $('#pKind').querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b)); renderPolicies(); }));
+$('#pSearch').addEventListener('input', renderPolicies);
+$('#pExt').addEventListener('change', renderPolicies);
+$('#pShow').addEventListener('change', renderPolicies);
+// Re-read the cluster when the tab comes back into view after a while, so a
+// manifest applied in a terminal shows up without pressing Refresh.
+document.addEventListener('visibilitychange', () => { if (!document.hidden && state.refs && Date.now() - state.loadedAt > 30000) loadRefs(true); });
+$('#run').addEventListener('click', runTrace);
+$('#pPort').addEventListener('input', renderPolicies);
+$('#refresh').addEventListener('click', () => loadRefs(true));
+$('#copy').addEventListener('click', () => navigator.clipboard.writeText($('#cli').textContent).then(() => { $('#copy').textContent = 'Copied'; setTimeout(() => ($('#copy').textContent = 'Copy'), 1200); }));
+$('#theme').addEventListener('click', () => {
+  document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  try { localStorage.setItem('npmap-theme', document.documentElement.dataset.theme); } catch {}
+});
+window.addEventListener('resize', () => { if (state.pSelected) drawConnectors($('#pDetail')); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.target.closest('.picker') && e.target.tagName !== 'INPUT' && $('#panel-trace').classList.contains('active')) runTrace(); });
+try { const t = localStorage.getItem('npmap-theme'); if (t) document.documentElement.dataset.theme = t; } catch {}
+
+// Restore a trace from the URL once refs are loaded.
+loadRefs().then(() => {
+  const p = new URLSearchParams(location.search);
+  const src = p.get('src'), dst = p.get('dst');
+  if (!src || !dst) return;
+  const [sn, ...sr] = src.split('/');
+  srcNs.set(sn, true); fillSrcWl(); srcWl.set(sr.join('/'), true);
+  if (p.get('kind') === 'internet') { setKind('internet'); dstName.set(dst, true); }
+  else { const [dn, ...dr] = dst.split('/'); setKind(dr.length > 1 ? 'workload' : 'service'); dstNs.set(dn, true); fillDstName(); dstName.set(dr.join('/'), true); }
+  fillDstPort(); dstPort.set(p.get('port') || '', true); syncCli();
+  if (srcWl.value && dstName.value) { showTab('trace'); runTrace(); }
+});
+</script>
+</body>
+</html>

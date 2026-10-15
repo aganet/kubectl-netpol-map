@@ -1,0 +1,50 @@
+# Cilium additions to demo.yaml, for clusters that run Cilium. They show the
+# patterns teams use on top of (or instead of) native policies:
+#
+#   - DNS-aware egress: the worker may reach api.stripe.com and *.amazonaws.com
+#     only, with a DNS L7 rule so Cilium can learn the IPs
+#   - an explicit cluster-wide deny of the cloud metadata endpoint
+#
+# Expected verdicts (Cilium cluster):
+#   shop/worker -> api.stripe.com:443 --resolve-fqdn   REACHABLE
+#   shop/worker -> internet                            REACHABLE with caveats (only the listed names are opened)
+#   any pod     -> 169.254.169.254                     BLOCKED at Egress policy (egressDeny)
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: worker-fqdn-egress
+  namespace: shop
+spec:
+  endpointSelector:
+    matchLabels:
+      app: worker
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: ANY
+          rules:
+            dns:
+              - matchPattern: "*"
+    - toFQDNs:
+        - matchName: api.stripe.com
+        - matchPattern: "*.amazonaws.com"
+      toPorts:
+        - ports:
+            - port: "443"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: deny-cloud-metadata
+spec:
+  endpointSelector: {}
+  egressDeny:
+    - toCIDR:
+        - 169.254.169.254/32
