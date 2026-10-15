@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -30,8 +31,62 @@ func main() {
 	}
 }
 
+// source is where snapshots come from: the cluster through kubeconfig, or
+// manifests given with --offline (files, directories, "-" for stdin).
+type source struct {
+	flags   *genericclioptions.ConfigFlags
+	offline []string
+}
+
+// namespace is the current namespace: -n, else the kubeconfig context's
+// (offline: -n only, otherwise all).
+func (s *source) namespace() string {
+	if s.flags.Namespace != nil && *s.flags.Namespace != "" {
+		return *s.flags.Namespace
+	}
+	if len(s.offline) > 0 {
+		return ""
+	}
+	ns, _, err := s.flags.ToRawKubeConfigLoader().Namespace()
+	if err != nil {
+		return ""
+	}
+	return ns
+}
+
+// snapshot loads ns ("" = all namespaces); mesh also reads the mesh CRs.
+func (s *source) snapshot(ctx context.Context, ns string, mesh bool) (*policy.Snapshot, error) {
+	if len(s.offline) > 0 {
+		snap, err := policy.LoadManifests(s.offline...)
+		if err != nil {
+			return nil, err
+		}
+		return snap.Scoped(ns), nil
+	}
+	clients, _, err := kube.NewClient(s.flags)
+	if err != nil {
+		return nil, fmt.Errorf("kube client: %w", err)
+	}
+	snap, err := policy.Fetch(ctx, clients, ns)
+	if err != nil {
+		return nil, fmt.Errorf("fetch policies/pods: %w", err)
+	}
+	if mesh {
+		snap.Mesh = policy.FetchMesh(ctx, clients)
+	}
+	return snap, nil
+}
+
+func (s *source) name() string {
+	if len(s.offline) > 0 {
+		return "offline: " + strings.Join(s.offline, ", ")
+	}
+	return contextName(s.flags)
+}
+
 func newRootCmd() *cobra.Command {
 	configFlags := genericclioptions.NewConfigFlags(true)
+	src := &source{flags: configFlags}
 
 	var (
 		allNamespaces bool
@@ -64,7 +119,13 @@ and shows what they allow and deny.
   kubectl npmap diff       what a proposed policy change would alter
   kubectl npmap lint       audit policies for stale selectors and risky patterns
 
-The tool only reads the cluster; it never changes anything.
+The tool only reads the cluster; it never changes anything. With --offline it
+reads manifests instead (a directory, files, or - for stdin), so a Git repo,
+a Helm chart or a Kustomize build can be reviewed without any cluster:
+
+  kubectl npmap ui --offline ./manifests
+  helm template my-app ./chart | kubectl npmap tui --offline -
+  kustomize build overlays/prod | kubectl npmap lint --offline -
 
 Examples:
   kubectl npmap
@@ -76,18 +137,13 @@ Examples:
   kubectl npmap -o json`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			ctx := context.Background()
-
-			clients, ns, err := kube.NewClient(configFlags)
-			if err != nil {
-				return fmt.Errorf("kube client: %w", err)
-			}
+			ns := src.namespace()
 			if allNamespaces {
 				ns = ""
 			}
-
-			snap, err := policy.Fetch(ctx, clients, ns)
+			snap, err := src.snapshot(ctx, ns, false)
 			if err != nil {
-				return fmt.Errorf("fetch policies/pods: %w", err)
+				return err
 			}
 			if resolveFQDN {
 				snap.Resolver = policy.NewNetResolver()
@@ -134,6 +190,8 @@ Examples:
 	}
 
 	configFlags.AddFlags(cmd.PersistentFlags())
+	cmd.PersistentFlags().StringSliceVar(&src.offline, "offline", nil,
+		"read manifests instead of a cluster: files, directories, or - for stdin (helm template … | kubectl npmap --offline -)")
 	cmd.Flags().BoolVarP(&allNamespaces, "all-namespaces", "A", false, "show reachability across all namespaces")
 	cmd.Flags().StringVar(&fromSelector, "from", "", "filter source pods by label selector (e.g. app=frontend)")
 	cmd.Flags().StringVar(&toSelector, "to", "", "filter destination pods by label selector")
@@ -149,15 +207,15 @@ Examples:
 	cmd.Flags().BoolVar(&resolveFQDN, "resolve-fqdn", false, "resolve Cilium toFQDNs egress via DNS to map external names to in-cluster pods and list external egress (makes DNS queries from where the CLI runs)")
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "include policy inventory sections and full legend")
 
-	cmd.AddCommand(newLintCmd(configFlags))
-	cmd.AddCommand(newPathCmd(configFlags))
-	cmd.AddCommand(newDiffCmd(configFlags))
-	cmd.AddCommand(newUICmd(configFlags))
-	cmd.AddCommand(newTUICmd(configFlags))
+	cmd.AddCommand(newLintCmd(src))
+	cmd.AddCommand(newPathCmd(src))
+	cmd.AddCommand(newDiffCmd(src))
+	cmd.AddCommand(newUICmd(src))
+	cmd.AddCommand(newTUICmd(src))
 	return cmd
 }
 
-func newTUICmd(configFlags *genericclioptions.ConfigFlags) *cobra.Command {
+func newTUICmd(src *source) *cobra.Command {
 	return &cobra.Command{
 		Use:   "tui",
 		Short: "Browse policies and connections in a full-screen terminal app",
@@ -168,24 +226,13 @@ layered trace of a connection, or what touches a workload. t traces any
 source → destination. Press ? inside the app for all keys.`,
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			clients, _, err := kube.NewClient(configFlags)
-			if err != nil {
-				return fmt.Errorf("kube client: %w", err)
-			}
-			fetch := func(ctx context.Context) (*policy.Snapshot, error) {
-				snap, err := policy.Fetch(ctx, clients, "")
-				if err != nil {
-					return nil, err
-				}
-				snap.Mesh = policy.FetchMesh(ctx, clients)
-				return snap, nil
-			}
-			return tui.Run(tui.New(fetch, contextName(configFlags)))
+			fetch := func(ctx context.Context) (*policy.Snapshot, error) { return src.snapshot(ctx, "", true) }
+			return tui.Run(tui.New(fetch, src.name()))
 		},
 	}
 }
 
-func newUICmd(configFlags *genericclioptions.ConfigFlags) *cobra.Command {
+func newUICmd(src *source) *cobra.Command {
 	var (
 		listen string
 		noOpen bool
@@ -202,24 +249,19 @@ kubeconfig; nothing is deployed. Stop it with Ctrl-C.`,
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			ctx := context.Background()
-			clients, _, err := kube.NewClient(configFlags)
-			if err != nil {
-				return fmt.Errorf("kube client: %w", err)
-			}
 			fetch := func(ctx context.Context) (*policy.Snapshot, error) {
-				snap, err := policy.Fetch(ctx, clients, "")
+				snap, err := src.snapshot(ctx, "", true)
 				if err != nil {
 					return nil, err
 				}
-				snap.Mesh = policy.FetchMesh(ctx, clients)
 				// External hosts are resolved from this machine so CIDR rules
 				// can be matched against them (same as --resolve-fqdn).
 				snap.Resolver = policy.NewNetResolver()
 				return snap, nil
 			}
-			// Fail fast on a bad kubeconfig before opening the browser.
+			// Fail fast on a bad kubeconfig or path before opening the browser.
 			if _, err := fetch(ctx); err != nil {
-				return fmt.Errorf("fetch policies/pods: %w", err)
+				return err
 			}
 			ln, err := net.Listen("tcp", listen)
 			if err != nil {
@@ -230,7 +272,7 @@ kubeconfig; nothing is deployed. Stop it with Ctrl-C.`,
 			if !noOpen {
 				openBrowser(url)
 			}
-			return http.Serve(ln, ui.New(fetch, contextName(configFlags)))
+			return http.Serve(ln, ui.New(fetch, src.name()))
 		},
 	}
 	cmd.Flags().StringVar(&listen, "listen", "127.0.0.1:8471", "address to serve the UI on")
@@ -262,7 +304,7 @@ func openBrowser(url string) {
 	_ = c.Start() // best-effort; the URL is printed either way
 }
 
-func newPathCmd(configFlags *genericclioptions.ConfigFlags) *cobra.Command {
+func newPathCmd(src *source) *cobra.Command {
 	var (
 		port        string
 		output      string
@@ -304,16 +346,12 @@ Examples:
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
-			clients, ns, err := kube.NewClient(configFlags)
-			if err != nil {
-				return fmt.Errorf("kube client: %w", err)
-			}
+			ns := src.namespace()
 			// path needs cluster-wide visibility to resolve either side.
-			snap, err := policy.Fetch(ctx, clients, "")
+			snap, err := src.snapshot(ctx, "", true)
 			if err != nil {
-				return fmt.Errorf("fetch policies/pods: %w", err)
+				return err
 			}
-			snap.Mesh = policy.FetchMesh(ctx, clients)
 			if resolveFQDN {
 				snap.Resolver = policy.NewNetResolver()
 			}
@@ -348,7 +386,7 @@ Examples:
 	return cmd
 }
 
-func newDiffCmd(configFlags *genericclioptions.ConfigFlags) *cobra.Command {
+func newDiffCmd(src *source) *cobra.Command {
 	var (
 		filename      string
 		allNamespaces bool
@@ -389,16 +427,13 @@ Examples:
 			}
 
 			ctx := context.Background()
-			clients, ns, err := kube.NewClient(configFlags)
-			if err != nil {
-				return fmt.Errorf("kube client: %w", err)
-			}
+			ns := src.namespace()
 			if allNamespaces {
 				ns = ""
 			}
-			before, err := policy.Fetch(ctx, clients, ns)
+			before, err := src.snapshot(ctx, ns, false)
 			if err != nil {
-				return fmt.Errorf("fetch policies/pods: %w", err)
+				return err
 			}
 			after, err := before.ApplyManifests(docs)
 			if err != nil {
@@ -449,7 +484,7 @@ Examples:
 	return cmd
 }
 
-func newLintCmd(configFlags *genericclioptions.ConfigFlags) *cobra.Command {
+func newLintCmd(src *source) *cobra.Command {
 	var (
 		allNamespaces bool
 		output        string
@@ -465,18 +500,13 @@ rules, overlapping isolation, standard/Cilium interaction).
 The tool only reports — it never mutates cluster state.`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			ctx := context.Background()
-
-			clients, ns, err := kube.NewClient(configFlags)
-			if err != nil {
-				return fmt.Errorf("kube client: %w", err)
-			}
+			ns := src.namespace()
 			if allNamespaces {
 				ns = ""
 			}
-
-			snap, err := policy.Fetch(ctx, clients, ns)
+			snap, err := src.snapshot(ctx, ns, false)
 			if err != nil {
-				return fmt.Errorf("fetch policies/pods: %w", err)
+				return err
 			}
 
 			findings := lint.Run(snap)

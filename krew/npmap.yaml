@@ -1,0 +1,39 @@
+apiVersion: krew.googlecontainertools.github.com/v1alpha2
+kind: Plugin
+metadata:
+  name: npmap
+spec:
+  version: v0.1.0
+  homepage: https://github.com/aganet/kubectl-npmap
+  shortDescription: Show what NetworkPolicies allow and deny, and why A can't reach B
+  description: |
+    kubectl-npmap reads the standard and Cilium NetworkPolicies in a cluster and
+    shows what they allow and deny: a policy map and trace in a local web UI, a
+    k9s-style terminal UI, and CLI commands for a reachability matrix, a layered
+    trace of one connection (DNS, Service, port, policy, mesh), a what-if diff of
+    a policy manifest, and a lint. It only reads the cluster.
+  platforms:
+    - selector: {matchLabels: {os: darwin, arch: arm64}}
+      uri: https://github.com/aganet/kubectl-npmap/releases/download/v0.1.0/kubectl-npmap_0.1.0_darwin_arm64.tar.gz
+      sha256: 82c405a8ba6a312ca64c43a4eb5eb144c7f0780a21a56b596f6fcba52ae76c5f
+      bin: kubectl-npmap
+    - selector: {matchLabels: {os: darwin, arch: amd64}}
+      uri: https://github.com/aganet/kubectl-npmap/releases/download/v0.1.0/kubectl-npmap_0.1.0_darwin_amd64.tar.gz
+      sha256: 08fac4c75a30a07e3a60fa1f927d3b84e98ac8453b0e977e209a0d389659b609
+      bin: kubectl-npmap
+    - selector: {matchLabels: {os: linux, arch: amd64}}
+      uri: https://github.com/aganet/kubectl-npmap/releases/download/v0.1.0/kubectl-npmap_0.1.0_linux_amd64.tar.gz
+      sha256: 23a9b1ea390038a45194c9bc61f1480332c2aadac26c30f2664008fd53766707
+      bin: kubectl-npmap
+    - selector: {matchLabels: {os: linux, arch: arm64}}
+      uri: https://github.com/aganet/kubectl-npmap/releases/download/v0.1.0/kubectl-npmap_0.1.0_linux_arm64.tar.gz
+      sha256: b6c9c9b0707f548ef5dfbbf4bd1d0bbe613b19f7262298681f5c99119b5f51e2
+      bin: kubectl-npmap
+    - selector: {matchLabels: {os: windows, arch: amd64}}
+      uri: https://github.com/aganet/kubectl-npmap/releases/download/v0.1.0/kubectl-npmap_0.1.0_windows_amd64.zip
+      sha256: 884f5de8ed4c56dcf53fa1d145a81d76f7b10e1c7a027aaaaeb7fd77cdb0af53
+      bin: kubectl-npmap.exe
+    - selector: {matchLabels: {os: windows, arch: arm64}}
+      uri: https://github.com/aganet/kubectl-npmap/releases/download/v0.1.0/kubectl-npmap_0.1.0_windows_arm64.zip
+      sha256: eee2ace14a80b1e81052f46c59bb3438795b92bc1e5b969dc6256315483c5a50
+      bin: kubectl-npmap.exe
