@@ -1,4 +1,4 @@
-# kubectl-npmap
+# kubectl-netpol-map
 
 ![Policies map](docs/policies-map.png)
 
@@ -6,35 +6,35 @@
 
 ![Terminal UI](docs/terminal.png)
 
-`kubectl npmap` shows what your Kubernetes NetworkPolicies (standard and Cilium)
+`kubectl netpol-map` shows what your Kubernetes NetworkPolicies (standard and Cilium)
 allow and deny, and why A can't reach B. Web UI, terminal UI and CLI. Read-only.
 
 ## Install
 
 ```sh
-go install github.com/aganet/kubectl-npmap/cmd/kubectl-npmap@latest
+go install github.com/aganet/kubectl-netpol-map/cmd/kubectl-netpol-map@latest
 export PATH="$PATH:$(go env GOPATH)/bin"   # kubectl finds plugins on the PATH
 ```
 
-Or a binary from [releases](https://github.com/aganet/kubectl-npmap/releases)
-(macOS, Linux, Windows; amd64, arm64), placed on your `PATH` as `kubectl-npmap`:
+Or a binary from [releases](https://github.com/aganet/kubectl-netpol-map/releases)
+(macOS, Linux, Windows; amd64, arm64), placed on your `PATH` as `kubectl-netpol-map`:
 
 ```sh
-V=0.1.0; OS=darwin; ARCH=arm64
-curl -LO https://github.com/aganet/kubectl-npmap/releases/download/v$V/kubectl-npmap_${V}_${OS}_${ARCH}.tar.gz
-tar -xzf kubectl-npmap_${V}_${OS}_${ARCH}.tar.gz && sudo install -m 0755 kubectl-npmap /usr/local/bin/
+V=0.2.0; OS=darwin; ARCH=arm64
+curl -LO https://github.com/aganet/kubectl-netpol-map/releases/download/v$V/kubectl-netpol-map_${V}_${OS}_${ARCH}.tar.gz
+tar -xzf kubectl-netpol-map_${V}_${OS}_${ARCH}.tar.gz && sudo install -m 0755 kubectl-netpol-map /usr/local/bin/
 ```
 
 ## Commands
 
 ```sh
-kubectl npmap ui                                          # web UI, localhost only
-kubectl npmap tui                                         # terminal UI, k9s-style
-kubectl npmap path shop/frontend api.payments.svc:8080     # why can't frontend reach api?
-kubectl npmap path shop/worker internet                   # can worker reach the internet?
-kubectl npmap -A --denies-only                            # reachability matrix, denied edges only
-kubectl npmap diff -f new-policy.yaml -A --fail-on-change # what a policy change would alter; CI gate
-kubectl npmap lint -A                                     # stale selectors, allow-from-anywhere, …
+kubectl netpol-map ui                                          # web UI, localhost only
+kubectl netpol-map tui                                         # terminal UI, k9s-style
+kubectl netpol-map path shop/frontend api.payments.svc:8080     # why can't frontend reach api?
+kubectl netpol-map path shop/worker internet                   # can worker reach the internet?
+kubectl netpol-map -A --denies-only                            # reachability matrix, denied edges only
+kubectl netpol-map diff -f new-policy.yaml -A --fail-on-change # what a policy change would alter; CI gate
+kubectl netpol-map lint -A                                     # stale selectors, allow-from-anywhere, …
 ```
 
 | Command | Flags |
@@ -59,16 +59,16 @@ so a Git repo, a Helm chart or a Kustomize build can be reviewed before it is
 applied. Workloads become synthetic pods; everything else works the same.
 
 ```sh
-kubectl npmap ui --offline ./manifests                   # a directory, walked recursively
-kubectl npmap tui --offline demo/demo.yaml
-helm template shop ./chart | kubectl npmap lint --offline -
-kustomize build overlays/prod | kubectl npmap path --offline - shop/frontend shop/api:8080
+kubectl netpol-map ui --offline ./manifests                   # a directory, walked recursively
+kubectl netpol-map tui --offline demo/demo.yaml
+helm template shop ./chart | kubectl netpol-map lint --offline -
+kustomize build overlays/prod | kubectl netpol-map path --offline - shop/frontend shop/api:8080
 ```
 
 ## Trace
 
 ```text
-$ kubectl npmap path shop/frontend api.payments.svc:8080
+$ kubectl netpol-map path shop/frontend api.payments.svc:8080
   ✓ DNS egress     source may reach kube-system/kube-dns:53 — egress allowed by shop/frontend-egress
   ✓ DNS            api.payments.svc → Service payments/api (ClusterIP 10.96.12.4)
   ✓ Service        selector app=api matches 3 pod(s), 2 ready

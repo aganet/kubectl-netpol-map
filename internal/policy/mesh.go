@@ -15,7 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 
-	"github.com/aganet/kubectl-npmap/internal/kube"
+	"github.com/aganet/kubectl-netpol-map/internal/kube"
 )
 
 // MeshSnapshot holds the service-mesh policy objects the `path` Mesh layer

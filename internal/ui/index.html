@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>npmap</title>
+<title>netpol-map</title>
 <style>
   :root {
     --bg: #f7f7f8; --bg-2: #ffffff; --panel: #ffffff; --panel-2: #f3f4f6; --border: #e2e4e8; --border-2: #cfd3d9;
@@ -207,7 +207,7 @@
 <header class="top">
   <div class="brand">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7.2 7.3l3.6 8.4M16.8 7.3l-3.6 8.4M7.5 6h9"/></svg>
-    npmap
+    netpol-map
   </div>
   <nav class="tabs" role="tablist">
     <button class="tab active" data-tab="policies">Policies</button>
@@ -270,7 +270,7 @@
     </div>
     <div class="actions">
       <button class="btn primary" id="run">Trace connection</button>
-      <div class="cli"><span>CLI</span><code id="cli">kubectl npmap path …</code><button class="btn small" id="copy">Copy</button></div>
+      <div class="cli"><span>CLI</span><code id="cli">kubectl netpol-map path …</code><button class="btn small" id="copy">Copy</button></div>
     </div>
     <div id="traceError"></div>
     <div id="traceResult"></div>
@@ -398,7 +398,7 @@ function refsOf() {
 }
 function syncCli() {
   const { src, dst, port } = refsOf();
-  $('#cli').textContent = `kubectl npmap path ${src || '<source>'} ${dst || '<destination>'}${port ? ':' + port : ''}${state.dstKind === 'internet' && dst && dst !== 'internet' && !/^[0-9.\/]+$/.test(dst) ? ' --resolve-fqdn' : ''}`;
+  $('#cli').textContent = `kubectl netpol-map path ${src || '<source>'} ${dst || '<destination>'}${port ? ':' + port : ''}${state.dstKind === 'internet' && dst && dst !== 'internet' && !/^[0-9.\/]+$/.test(dst) ? ' --resolve-fqdn' : ''}`;
   $('#run').disabled = !(src && dst);
 }
 
@@ -548,12 +548,12 @@ function downloadSVG(mapId) {
   clone.style.zoom = ''; clone.style.background = getComputedStyle($('#' + mapId)).backgroundColor;
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
   const blob = new Blob([clone.outerHTML], { type: 'image/svg+xml' });
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `npmap-${mapId === 'pmap' ? 'policies' : 'reachability'}.svg`; a.click();
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `netpol-map-${mapId === 'pmap' ? 'policies' : 'reachability'}.svg`; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 /* Layout: each namespace group has a free x/y position. Groups start in a
    row; the user drags them anywhere and the positions are kept per cluster. */
-const layoutKey = (mapId) => `npmap-layout-${state.refs?.context || ''}-${mapId}`;
+const layoutKey = (mapId) => `netpol-map-layout-${state.refs?.context || ''}-${mapId}`;
 state.layout = {};
 function savedLayout(mapId) {
   if (!state.layout[mapId]) { try { state.layout[mapId] = JSON.parse(localStorage.getItem(layoutKey(mapId)) || '{}'); } catch { state.layout[mapId] = {}; } }
@@ -859,11 +859,11 @@ $('#refresh').addEventListener('click', () => loadRefs(true));
 $('#copy').addEventListener('click', () => navigator.clipboard.writeText($('#cli').textContent).then(() => { $('#copy').textContent = 'Copied'; setTimeout(() => ($('#copy').textContent = 'Copy'), 1200); }));
 $('#theme').addEventListener('click', () => {
   document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-  try { localStorage.setItem('npmap-theme', document.documentElement.dataset.theme); } catch {}
+  try { localStorage.setItem('netpol-map-theme', document.documentElement.dataset.theme); } catch {}
 });
 window.addEventListener('resize', () => { if (state.pSelected) drawConnectors($('#pDetail')); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.target.closest('.picker') && e.target.tagName !== 'INPUT' && $('#panel-trace').classList.contains('active')) runTrace(); });
-try { const t = localStorage.getItem('npmap-theme'); if (t) document.documentElement.dataset.theme = t; } catch {}
+try { const t = localStorage.getItem('netpol-map-theme'); if (t) document.documentElement.dataset.theme = t; } catch {}
 
 // Restore a trace from the URL once refs are loaded.
 loadRefs().then(() => {

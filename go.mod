@@ -1,4 +1,4 @@
-module github.com/aganet/kubectl-npmap
+module github.com/aganet/kubectl-netpol-map
 
 go 1.26.0
 

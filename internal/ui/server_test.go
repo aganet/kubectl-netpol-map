@@ -12,7 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	"github.com/aganet/kubectl-npmap/internal/policy"
+	"github.com/aganet/kubectl-netpol-map/internal/policy"
 )
 
 func readyPod(ns, name string, lbl map[string]string, portName string, port int32) corev1.Pod {

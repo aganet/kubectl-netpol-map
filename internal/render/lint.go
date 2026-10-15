@@ -9,7 +9,7 @@ import (
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/jedib0t/go-pretty/v6/text"
 
-	"github.com/aganet/kubectl-npmap/internal/lint"
+	"github.com/aganet/kubectl-netpol-map/internal/lint"
 )
 
 // Lint renders a flat table of findings, grouped by severity, plus a short

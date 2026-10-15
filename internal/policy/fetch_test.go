@@ -15,7 +15,7 @@ import (
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"github.com/aganet/kubectl-npmap/internal/kube"
+	"github.com/aganet/kubectl-netpol-map/internal/kube"
 )
 
 func cr(apiVersion, kind, ns, name string) *unstructured.Unstructured {

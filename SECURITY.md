@@ -1,6 +1,6 @@
 # Security
 
-kubectl-npmap only reads a cluster (`list` and discovery calls) and never
+kubectl-netpol-map only reads a cluster (`list` and discovery calls) and never
 creates, updates or deletes anything. The web UI binds to localhost, answers
 only to localhost host names, and has no authentication: do not expose it with
 `--listen` on a shared network. Nothing leaves your machine except API calls

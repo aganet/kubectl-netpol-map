@@ -13,12 +13,12 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 
-	"github.com/aganet/kubectl-npmap/internal/kube"
-	"github.com/aganet/kubectl-npmap/internal/lint"
-	"github.com/aganet/kubectl-npmap/internal/policy"
-	"github.com/aganet/kubectl-npmap/internal/render"
-	"github.com/aganet/kubectl-npmap/internal/tui"
-	"github.com/aganet/kubectl-npmap/internal/ui"
+	"github.com/aganet/kubectl-netpol-map/internal/kube"
+	"github.com/aganet/kubectl-netpol-map/internal/lint"
+	"github.com/aganet/kubectl-netpol-map/internal/policy"
+	"github.com/aganet/kubectl-netpol-map/internal/render"
+	"github.com/aganet/kubectl-netpol-map/internal/tui"
+	"github.com/aganet/kubectl-netpol-map/internal/ui"
 )
 
 // version is set by the release build (-ldflags "-X main.version=...").
@@ -106,35 +106,35 @@ func newRootCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:     "kubectl-npmap",
+		Use:     "kubectl-netpol-map",
 		Version: version,
 		Short:   "See what your NetworkPolicies allow and deny, and why A can't reach B",
-		Long: `kubectl-npmap reads the NetworkPolicies (standard and Cilium) in a cluster
+		Long: `kubectl-netpol-map reads the NetworkPolicies (standard and Cilium) in a cluster
 and shows what they allow and deny.
 
-  kubectl npmap            reachability matrix for the selected namespace(s)
-  kubectl npmap ui         web UI: policy map and connection trace
-  kubectl npmap tui        the same in the terminal, full screen
-  kubectl npmap path       trace one connection layer by layer and say where it breaks
-  kubectl npmap diff       what a proposed policy change would alter
-  kubectl npmap lint       audit policies for stale selectors and risky patterns
+  kubectl netpol-map            reachability matrix for the selected namespace(s)
+  kubectl netpol-map ui         web UI: policy map and connection trace
+  kubectl netpol-map tui        the same in the terminal, full screen
+  kubectl netpol-map path       trace one connection layer by layer and say where it breaks
+  kubectl netpol-map diff       what a proposed policy change would alter
+  kubectl netpol-map lint       audit policies for stale selectors and risky patterns
 
 The tool only reads the cluster; it never changes anything. With --offline it
 reads manifests instead (a directory, files, or - for stdin), so a Git repo,
 a Helm chart or a Kustomize build can be reviewed without any cluster:
 
-  kubectl npmap ui --offline ./manifests
-  helm template my-app ./chart | kubectl npmap tui --offline -
-  kustomize build overlays/prod | kubectl npmap lint --offline -
+  kubectl netpol-map ui --offline ./manifests
+  helm template my-app ./chart | kubectl netpol-map tui --offline -
+  kustomize build overlays/prod | kubectl netpol-map lint --offline -
 
 Examples:
-  kubectl npmap
-  kubectl npmap -n my-ns
-  kubectl npmap --all-namespaces
-  kubectl npmap --from app=frontend --to app=db --port 5432
-  kubectl npmap -A --from-namespace shop --to-namespace payments
-  kubectl npmap -A --denies-only
-  kubectl npmap -o json`,
+  kubectl netpol-map
+  kubectl netpol-map -n my-ns
+  kubectl netpol-map --all-namespaces
+  kubectl netpol-map --from app=frontend --to app=db --port 5432
+  kubectl netpol-map -A --from-namespace shop --to-namespace payments
+  kubectl netpol-map -A --denies-only
+  kubectl netpol-map -o json`,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			ctx := context.Background()
 			ns := src.namespace()
@@ -191,7 +191,7 @@ Examples:
 
 	configFlags.AddFlags(cmd.PersistentFlags())
 	cmd.PersistentFlags().StringSliceVar(&src.offline, "offline", nil,
-		"read manifests instead of a cluster: files, directories, or - for stdin (helm template … | kubectl npmap --offline -)")
+		"read manifests instead of a cluster: files, directories, or - for stdin (helm template … | kubectl netpol-map --offline -)")
 	cmd.Flags().BoolVarP(&allNamespaces, "all-namespaces", "A", false, "show reachability across all namespaces")
 	cmd.Flags().StringVar(&fromSelector, "from", "", "filter source pods by label selector (e.g. app=frontend)")
 	cmd.Flags().StringVar(&toSelector, "to", "", "filter destination pods by label selector")
@@ -268,7 +268,7 @@ kubeconfig; nothing is deployed. Stop it with Ctrl-C.`,
 				return err
 			}
 			url := "http://" + ln.Addr().String()
-			fmt.Fprintf(os.Stderr, "kubectl-npmap ui: %s  (Ctrl-C to stop)\n", url)
+			fmt.Fprintf(os.Stderr, "kubectl-netpol-map ui: %s  (Ctrl-C to stop)\n", url)
 			if !noOpen {
 				openBrowser(url)
 			}
@@ -342,13 +342,13 @@ For an external destination the egress rules that can leave the cluster
 --resolve-fqdn a host is resolved so CIDR rules can be matched against it.
 
 Examples:
-  kubectl npmap path shop/frontend payments/api:8080
-  kubectl npmap path shop/frontend api.payments.svc.cluster.local:8080
-  kubectl npmap path shop/frontend internet
-  kubectl npmap path shop/frontend api.stripe.com:443 --resolve-fqdn
-  kubectl npmap path shop/frontend payments/api --port 8080
-  kubectl npmap path "shop:app=frontend" payments/api
-  kubectl npmap path -n shop frontend api:8080 -o json`,
+  kubectl netpol-map path shop/frontend payments/api:8080
+  kubectl netpol-map path shop/frontend api.payments.svc.cluster.local:8080
+  kubectl netpol-map path shop/frontend internet
+  kubectl netpol-map path shop/frontend api.stripe.com:443 --resolve-fqdn
+  kubectl netpol-map path shop/frontend payments/api --port 8080
+  kubectl netpol-map path "shop:app=frontend" payments/api
+  kubectl netpol-map path -n shop frontend api:8080 -o json`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
@@ -416,9 +416,9 @@ With --fail-on-change the command exits non-zero if any edge changes, which
 makes it usable as a pre-merge CI gate.
 
 Examples:
-  kubectl npmap diff -f new-policy.yaml
-  kubectl npmap diff -f new-policy.yaml -A --fail-on-change
-  kubectl npmap diff -f new-policy.yaml -o json | jq '.newlyAllowed'`,
+  kubectl netpol-map diff -f new-policy.yaml
+  kubectl netpol-map diff -f new-policy.yaml -A --fail-on-change
+  kubectl netpol-map diff -f new-policy.yaml -o json | jq '.newlyAllowed'`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if filename == "" {
 				return fmt.Errorf("--filename/-f is required")

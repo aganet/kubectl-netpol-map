@@ -7,7 +7,7 @@ import (
 	"io"
 	"sort"
 
-	"github.com/aganet/kubectl-npmap/internal/policy"
+	"github.com/aganet/kubectl-netpol-map/internal/policy"
 )
 
 // HTML renders a self-contained, shareable audit artifact: a verdict-coloured
@@ -114,7 +114,7 @@ func HTMLWithOptions(w io.Writer, m *policy.Matrix, opts Options) error {
 
 const htmlHead = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
-<title>kubectl-npmap reachability</title>
+<title>kubectl-netpol-map reachability</title>
 <style>
   body { font-family: -apple-system, system-ui, sans-serif; margin: 2rem; color: #1a1a1a; }
   h1 { margin-bottom: 0.2rem; }

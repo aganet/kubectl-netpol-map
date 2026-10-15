@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-// PathResult answers `kubectl npmap path <src> <dst>`: the chain of layers a
+// PathResult answers `kubectl netpol-map path <src> <dst>`: the chain of layers a
 // connection crosses, checked in order, plus the NetworkPolicy verdict
 // aggregated across every pod pair the two references resolve to.
 type PathResult struct {

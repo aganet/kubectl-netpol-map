@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 
-	"github.com/aganet/kubectl-npmap/internal/kube"
+	"github.com/aganet/kubectl-netpol-map/internal/kube"
 )
 
 // Snapshot is the cluster state we evaluate against.

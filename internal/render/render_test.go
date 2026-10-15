@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aganet/kubectl-npmap/internal/policy"
+	"github.com/aganet/kubectl-netpol-map/internal/policy"
 )
 
 // sampleMatrix builds a tiny cross-namespace matrix mirroring the
@@ -55,7 +55,7 @@ func TestDotRendersEdges(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := b.String()
-	for _, want := range []string{"digraph npmap", "rankdir=LR", "cluster_", "->", "DENY"} {
+	for _, want := range []string{`digraph "netpol-map"`, "rankdir=LR", "cluster_", "->", "DENY"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("dot output missing %q:\n%s", want, out)
 		}

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/aganet/kubectl-npmap/internal/policy"
+	"github.com/aganet/kubectl-netpol-map/internal/policy"
 )
 
 // graphEdge is one source→destination relationship destined for a graph
@@ -121,7 +121,7 @@ func MermaidWithOptions(w io.Writer, m *policy.Matrix, opts Options) error {
 	edges := collectGraphEdges(m, view, opts)
 
 	fmt.Fprintln(w, "flowchart LR")
-	fmt.Fprintln(w, "  %% kubectl-npmap reachability graph")
+	fmt.Fprintln(w, "  %% kubectl-netpol-map reachability graph")
 
 	// Collect nodes per namespace (only nodes that appear in an edge).
 	nsNodes := map[string]map[string]string{} // ns -> display -> id
@@ -209,7 +209,7 @@ func DotWithOptions(w io.Writer, m *policy.Matrix, opts Options) error {
 	view := applyNamespaceFilter(m)
 	edges := collectGraphEdges(m, view, opts)
 
-	fmt.Fprintln(w, "digraph npmap {")
+	fmt.Fprintln(w, `digraph "netpol-map" {`)
 	fmt.Fprintln(w, "  rankdir=LR;")
 	fmt.Fprintln(w, "  node [shape=box,style=rounded,fontname=\"Helvetica\"];")
 

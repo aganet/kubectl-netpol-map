@@ -9,7 +9,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/jedib0t/go-pretty/v6/text"
 
-	"github.com/aganet/kubectl-npmap/internal/policy"
+	"github.com/aganet/kubectl-netpol-map/internal/policy"
 )
 
 // Path renders a single src→dst question as the chain of layers the

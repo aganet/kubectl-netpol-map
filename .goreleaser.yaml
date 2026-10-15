@@ -1,9 +1,9 @@
 version: 2
-project_name: kubectl-npmap
+project_name: kubectl-netpol-map
 
 builds:
-  - main: ./cmd/kubectl-npmap
-    binary: kubectl-npmap
+  - main: ./cmd/kubectl-netpol-map
+    binary: kubectl-netpol-map
     env: [CGO_ENABLED=0]
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]

@@ -19,8 +19,8 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/yaml"
 
-	"github.com/aganet/kubectl-npmap/internal/lint"
-	"github.com/aganet/kubectl-npmap/internal/policy"
+	"github.com/aganet/kubectl-netpol-map/internal/lint"
+	"github.com/aganet/kubectl-netpol-map/internal/policy"
 )
 
 type view int
@@ -356,7 +356,7 @@ func (m *Model) clampList() {
 
 // Geometry: header (headerRows) + list box (rows + title + column header +
 // 2 borders) + detail box (rows + 2 borders) + status bar (1).
-const headerRows = 5
+const headerRows = 6
 
 func (m Model) listRows() int   { return max(3, (m.height-headerRows-7)*2/5) }
 func (m Model) detailRows() int { return max(3, m.height-headerRows-7-m.listRows()) }
@@ -438,9 +438,9 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			m.refreshDetail()
 		default:
 			if delta > 0 {
-				m.detail.LineDown(3)
+				m.detail.ScrollDown(3)
 			} else {
-				m.detail.LineUp(3)
+				m.detail.ScrollUp(3)
 			}
 		}
 		return m, nil
@@ -776,24 +776,25 @@ func (m Model) View() string {
 	screen := lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), body, m.renderStatus())
 	switch {
 	case m.help:
-		return m.overlay(screen, m.renderHelp())
+		return m.overlay(m.renderHelp())
 	case m.pick != nil:
-		return m.overlay(screen, m.renderPicker())
+		return m.overlay(m.renderPicker())
 	}
 	return screen
 }
 
-func (m Model) overlay(screen, box string) string {
+func (m Model) overlay(box string) string {
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box, lipgloss.WithWhitespaceChars(" "))
 }
 
 // logo is the k9s-style banner shown top-right when the terminal is wide enough.
 var logo = []string{
-	` _ __  _ __  _ __ ___   __ _ _ __  `,
-	`| '_ \| '_ \| '_ ` + "`" + ` _ \ / _` + "`" + ` | '_ \ `,
-	`| | | | |_) | | | | | | (_| | |_) |`,
-	`|_| |_| .__/|_| |_| |_|\__,_| .__/ `,
-	`      |_|                   |_|    `,
+	`              _                 _                                   `,
+	` _ __   ___| |_ _ __   ___ | |        _ __ ___   __ _ _ __  `,
+	`| '_ \ / _ \| __| '_ \ / _ \| |  _____| '_ ` + "`" + ` _ \ / _` + "`" + ` | '_ \ `,
+	`| | | |  __/| |_| |_) | (_) | | |_____| | | | | | (_| | |_) |`,
+	`|_| |_|\___| \__| .__/ \___/|_|       |_| |_| |_|\__,_| .__/ `,
+	`                |_|                                   |_|    `,
 }
 
 func (m Model) renderHeader() string {
@@ -815,10 +816,11 @@ func (m Model) renderHeader() string {
 	for len(lines) < headerRows {
 		lines = append(lines, "")
 	}
-	left := lipgloss.NewStyle().Width(m.width - 38).Render(strings.Join(lines[:headerRows], "\n"))
-	if m.width < 100 {
-		return left
+	logoW := lipgloss.Width(logo[2]) + 2
+	if m.width < 70+logoW {
+		return lipgloss.NewStyle().Width(m.width).Render(strings.Join(lines[:headerRows], "\n"))
 	}
+	left := lipgloss.NewStyle().Width(m.width - logoW).Render(strings.Join(lines[:headerRows], "\n"))
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, sAccent.Render(strings.Join(logo, "\n")))
 }
 
@@ -1482,7 +1484,7 @@ func (m Model) renderHelp() string {
 		{"y", "YAML of the selected policy"}, {"/  esc", "filter · clear"}, {"d", "show or hide denied connections"},
 		{"r", "re-read the cluster"}, {"mouse", "click to select, wheel to scroll"}, {"q", "quit"},
 	}
-	lines := []string{sTitle.Render("npmap keys"), ""}
+	lines := []string{sTitle.Render("netpol-map keys"), ""}
 	for _, r := range rows {
 		lines = append(lines, sAccent.Render(fmt.Sprintf("%-16s", r[0]))+r[1])
 	}

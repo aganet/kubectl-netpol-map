@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aganet/kubectl-npmap/internal/policy"
+	"github.com/aganet/kubectl-netpol-map/internal/policy"
 )
 
 func samplePath() *policy.PathResult {

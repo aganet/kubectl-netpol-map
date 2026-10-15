@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aganet/kubectl-npmap/internal/lint"
-	"github.com/aganet/kubectl-npmap/internal/policy"
-	"github.com/aganet/kubectl-npmap/internal/render"
+	"github.com/aganet/kubectl-netpol-map/internal/lint"
+	"github.com/aganet/kubectl-netpol-map/internal/policy"
+	"github.com/aganet/kubectl-netpol-map/internal/render"
 )
 
 //go:embed index.html
@@ -49,7 +49,7 @@ func LocalOnly(next http.Handler) http.Handler {
 		case "localhost", "127.0.0.1", "::1", "[::1]":
 			next.ServeHTTP(w, r)
 		default:
-			http.Error(w, "kubectl-npmap ui only answers to localhost", http.StatusForbidden)
+			http.Error(w, "kubectl-netpol-map ui only answers to localhost", http.StatusForbidden)
 		}
 	})
 }
@@ -203,7 +203,7 @@ func (s *server) refs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
-// path traces src → dst exactly like `kubectl npmap path`.
+// path traces src → dst exactly like `kubectl netpol-map path`.
 func (s *server) path(w http.ResponseWriter, r *http.Request) {
 	snap, err := s.snapshot(r)
 	if err != nil {

@@ -1,19 +1,19 @@
 .PHONY: build test install ui tui demo demo-clean
 
 build:
-	go build -o bin/kubectl-npmap ./cmd/kubectl-npmap
+	go build -o bin/kubectl-netpol-map ./cmd/kubectl-netpol-map
 
 test:
 	gofmt -l . && go vet ./... && go test ./...
 
 install: build
-	install -m 0755 bin/kubectl-npmap /usr/local/bin/kubectl-npmap
+	install -m 0755 bin/kubectl-netpol-map /usr/local/bin/kubectl-netpol-map
 
 ui: build
-	bin/kubectl-npmap ui
+	bin/kubectl-netpol-map ui
 
 tui: build
-	bin/kubectl-npmap tui
+	bin/kubectl-netpol-map tui
 
 demo:
 	kubectl apply -f demo/demo.yaml

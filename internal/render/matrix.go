@@ -12,7 +12,7 @@ import (
 	"github.com/jedib0t/go-pretty/v6/text"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	"github.com/aganet/kubectl-npmap/internal/policy"
+	"github.com/aganet/kubectl-netpol-map/internal/policy"
 )
 
 // Options controls verbosity and filtering knobs that affect rendering only.
@@ -522,7 +522,7 @@ func indexBy(refs []policy.Axis) map[string]int {
 }
 
 // truncate shortens s to at most max runes with a middle ellipsis.
-// "kube-controller-manager-npmap-plane" max=15 → "kube-co…l-plane".
+// "kube-controller-manager-netpol-map-plane" max=15 → "kube-co…l-plane".
 func truncate(s string, max int) string {
 	runes := []rune(s)
 	if max < 4 || len(runes) <= max {

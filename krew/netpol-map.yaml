@@ -1,0 +1,40 @@
+apiVersion: krew.googlecontainertools.github.com/v1alpha2
+kind: Plugin
+metadata:
+  name: netpol-map
+spec:
+  version: v0.2.0
+  homepage: https://github.com/aganet/kubectl-netpol-map
+  shortDescription: Show what NetworkPolicies allow and deny
+  description: |
+    kubectl-netpol-map reads the standard and Cilium NetworkPolicies in a
+    cluster, or in a folder of manifests, and shows what they allow and deny
+    and why A can't reach B: a policy map and trace in a local web UI, a
+    k9s-style terminal UI, and CLI commands for a reachability matrix, a
+    layered trace of one connection (DNS, Service, port, policy, mesh), a
+    what-if diff of a policy manifest, and a lint. It only reads the cluster.
+  platforms:
+    - selector: {matchLabels: {os: darwin, arch: arm64}}
+      uri: https://github.com/aganet/kubectl-netpol-map/releases/download/v0.2.0/kubectl-netpol-map_0.2.0_darwin_arm64.tar.gz
+      sha256: TODO
+      bin: kubectl-netpol-map
+    - selector: {matchLabels: {os: darwin, arch: amd64}}
+      uri: https://github.com/aganet/kubectl-netpol-map/releases/download/v0.2.0/kubectl-netpol-map_0.2.0_darwin_amd64.tar.gz
+      sha256: TODO
+      bin: kubectl-netpol-map
+    - selector: {matchLabels: {os: linux, arch: amd64}}
+      uri: https://github.com/aganet/kubectl-netpol-map/releases/download/v0.2.0/kubectl-netpol-map_0.2.0_linux_amd64.tar.gz
+      sha256: TODO
+      bin: kubectl-netpol-map
+    - selector: {matchLabels: {os: linux, arch: arm64}}
+      uri: https://github.com/aganet/kubectl-netpol-map/releases/download/v0.2.0/kubectl-netpol-map_0.2.0_linux_arm64.tar.gz
+      sha256: TODO
+      bin: kubectl-netpol-map
+    - selector: {matchLabels: {os: windows, arch: amd64}}
+      uri: https://github.com/aganet/kubectl-netpol-map/releases/download/v0.2.0/kubectl-netpol-map_0.2.0_windows_amd64.zip
+      sha256: TODO
+      bin: kubectl-netpol-map.exe
+    - selector: {matchLabels: {os: windows, arch: arm64}}
+      uri: https://github.com/aganet/kubectl-netpol-map/releases/download/v0.2.0/kubectl-netpol-map_0.2.0_windows_arm64.zip
+      sha256: TODO
+      bin: kubectl-netpol-map.exe
