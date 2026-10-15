@@ -20,7 +20,7 @@ Or a binary from [releases](https://github.com/aganet/kubectl-netpol-map/release
 (macOS, Linux, Windows; amd64, arm64), placed on your `PATH` as `kubectl-netpol-map`:
 
 ```sh
-V=0.2.0; OS=darwin; ARCH=arm64
+V=0.2.1; OS=darwin; ARCH=arm64
 curl -LO https://github.com/aganet/kubectl-netpol-map/releases/download/v$V/kubectl-netpol-map_${V}_${OS}_${ARCH}.tar.gz
 tar -xzf kubectl-netpol-map_${V}_${OS}_${ARCH}.tar.gz && sudo install -m 0755 kubectl-netpol-map /usr/local/bin/
 ```
