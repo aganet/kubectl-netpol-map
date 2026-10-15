@@ -787,14 +787,37 @@ func (m Model) overlay(box string) string {
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box, lipgloss.WithWhitespaceChars(" "))
 }
 
-// logo is the k9s-style banner shown top-right when the terminal is wide enough.
-var logo = []string{
-	`              _                 _                                   `,
-	` _ __   ___| |_ _ __   ___ | |        _ __ ___   __ _ _ __  `,
-	`| '_ \ / _ \| __| '_ \ / _ \| |  _____| '_ ` + "`" + ` _ \ / _` + "`" + ` | '_ \ `,
-	`| | | |  __/| |_| |_) | (_) | | |_____| | | | | | (_| | |_) |`,
-	`|_| |_|\___| \__| .__/ \___/|_|       |_| |_| |_|\__,_| .__/ `,
-	`                |_|                                   |_|    `,
+// logo is the k9s-style banner shown top-right when the terminal is wide
+// enough: the figlet "standard" font, assembled glyph by glyph so the rows
+// always line up.
+var logo = renderLogo("netpol-map")
+
+// figletStandard holds the glyphs the logo needs; every row of a glyph has
+// the same width.
+var figletStandard = map[rune][6]string{
+	'n': {"       ", " _ __  ", "| '_ \\ ", "| | | |", "|_| |_|", "       "},
+	'e': {"       ", "  ___  ", " / _ \\ ", "|  __/ ", " \\___| ", "       "},
+	't': {" _   ", "| |_ ", "| __|", "| |_ ", " \\__|", "     "},
+	'p': {"       ", " _ __  ", "| '_ \\ ", "| |_) |", "| .__/ ", "|_|    "},
+	'o': {"       ", "  ___  ", " / _ \\ ", "| (_) |", " \\___/ ", "       "},
+	'l': {" _ ", "| |", "| |", "| |", "|_|", "   "},
+	'-': {"       ", "       ", " _____ ", "|_____|", "       ", "       "},
+	'm': {"           ", " _ __ ___  ", "| '_ ` _ \\ ", "| | | | | |", "|_| |_| |_|", "           "},
+	'a': {"       ", "  __ _ ", " / _` |", "| (_| |", " \\__,_|", "       "},
+}
+
+func renderLogo(text string) []string {
+	rows := make([]string, 6)
+	for _, r := range text {
+		g, ok := figletStandard[r]
+		if !ok {
+			continue
+		}
+		for i := range rows {
+			rows[i] += g[i]
+		}
+	}
+	return rows
 }
 
 func (m Model) renderHeader() string {
@@ -816,7 +839,7 @@ func (m Model) renderHeader() string {
 	for len(lines) < headerRows {
 		lines = append(lines, "")
 	}
-	logoW := lipgloss.Width(logo[2]) + 2
+	logoW := lipgloss.Width(logo[0]) + 2
 	if m.width < 70+logoW {
 		return lipgloss.NewStyle().Width(m.width).Render(strings.Join(lines[:headerRows], "\n"))
 	}
