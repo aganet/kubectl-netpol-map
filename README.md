@@ -112,7 +112,9 @@ objects, sends no packets, assumes CoreDNS in `kube-system` and outbound NAT.
 ## Safety
 
 Only `list` and discovery calls; nothing is created, updated or deleted. A
-read-only RBAC role is enough. The web UI binds to localhost.
+read-only RBAC role is enough. The web UI binds to localhost and answers only
+to localhost host names. Dependencies are scanned with `govulncheck` in CI.
+See [SECURITY.md](SECURITY.md) for reporting.
 
 ## Development
 

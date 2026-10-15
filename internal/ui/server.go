@@ -7,6 +7,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"net"
 	"net/http"
 	"sort"
 	"strconv"
@@ -32,6 +33,25 @@ type server struct {
 	mu   sync.Mutex
 	snap *policy.Snapshot
 	at   time.Time
+}
+
+// LocalOnly rejects requests whose Host header is not a loopback name. A
+// web page on another site cannot read the UI's responses directly, but DNS
+// rebinding would let it reach the server under its own host name; this
+// closes that door for the default loopback listen.
+func LocalOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		switch host {
+		case "localhost", "127.0.0.1", "::1", "[::1]":
+			next.ServeHTTP(w, r)
+		default:
+			http.Error(w, "kubectl-npmap ui only answers to localhost", http.StatusForbidden)
+		}
+	})
 }
 
 // New returns the HTTP handler. fetch produces a cluster-wide snapshot (with

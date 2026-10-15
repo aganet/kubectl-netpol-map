@@ -272,7 +272,13 @@ kubeconfig; nothing is deployed. Stop it with Ctrl-C.`,
 			if !noOpen {
 				openBrowser(url)
 			}
-			return http.Serve(ln, ui.New(fetch, src.name()))
+			handler := ui.New(fetch, src.name())
+			if ln.Addr().(*net.TCPAddr).IP.IsLoopback() {
+				handler = ui.LocalOnly(handler)
+			} else {
+				fmt.Fprintln(os.Stderr, "warning: --listen is not a loopback address; anyone who can reach this port sees the cluster's policies and workloads (read-only, no authentication)")
+			}
+			return http.Serve(ln, handler)
 		},
 	}
 	cmd.Flags().StringVar(&listen, "listen", "127.0.0.1:8471", "address to serve the UI on")

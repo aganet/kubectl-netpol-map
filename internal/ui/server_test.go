@@ -163,3 +163,16 @@ func TestMatrixAndLint(t *testing.T) {
 		t.Errorf("unknown path should 404, got %d", code)
 	}
 }
+
+func TestLocalOnlyRejectsForeignHost(t *testing.T) {
+	h := LocalOnly(testHandler(t))
+	for host, want := range map[string]int{"127.0.0.1:8471": 200, "localhost:8471": 200, "[::1]:8471": 200, "evil.example:8471": 403, "10.0.0.5": 403} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Host = host
+		h.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Errorf("Host %q: got %d, want %d", host, rec.Code, want)
+		}
+	}
+}
