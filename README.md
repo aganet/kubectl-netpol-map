@@ -30,16 +30,28 @@ they deny, and why A can't reach B**. It never changes the cluster.
 
 ## Install
 
-Requires Go 1.26 and a kubeconfig.
+With Go 1.26:
 
 ```sh
 go install github.com/aganet/kubectl-npmap/cmd/kubectl-npmap@latest
-kubectl npmap --help
 ```
 
-Or download a binary from the [releases](https://github.com/aganet/kubectl-npmap/releases)
-and put `kubectl-npmap` on your `PATH`. The usual kubectl flags
-(`--kubeconfig`, `--context`, `-n`, `--as`) work on every command.
+Or a binary from the [releases](https://github.com/aganet/kubectl-npmap/releases)
+(macOS, Linux, Windows; amd64 and arm64). Any `kubectl-npmap` on your `PATH`
+becomes `kubectl npmap`:
+
+```sh
+V=0.1.0; OS=darwin; ARCH=arm64      # or linux / windows, amd64 / arm64
+curl -LO https://github.com/aganet/kubectl-npmap/releases/download/v$V/kubectl-npmap_${V}_${OS}_${ARCH}.tar.gz
+curl -LO https://github.com/aganet/kubectl-npmap/releases/download/v$V/checksums.txt
+shasum -a 256 --check --ignore-missing checksums.txt   # sha256sum on Linux
+tar -xzf kubectl-npmap_${V}_${OS}_${ARCH}.tar.gz
+sudo install -m 0755 kubectl-npmap /usr/local/bin/kubectl-npmap
+kubectl npmap --version
+```
+
+A kubeconfig is all it needs. The usual kubectl flags (`--kubeconfig`,
+`--context`, `-n`, `--as`) work on every command.
 
 ## Quick start
 
@@ -64,6 +76,35 @@ kubectl npmap path shop/frontend shop/api:8080            # REACHABLE
 kubectl npmap path shop/frontend shop/postgres:5432       # BLOCKED at NetworkPolicy
 kubectl delete -f demo/demo.yaml
 ```
+
+## Commands
+
+```text
+kubectl npmap [flags]                       reachability matrix (default command)
+kubectl npmap path <source> <destination>   trace one connection layer by layer
+kubectl npmap ui                            web UI on localhost
+kubectl npmap tui                           full-screen terminal UI
+kubectl npmap diff -f <policy.yaml>         impact of a proposed policy change
+kubectl npmap lint                          audit policies for risky patterns
+kubectl npmap --version                     installed version
+```
+
+| Command | Flags |
+| --- | --- |
+| matrix | `-n` namespace, `-A` all namespaces, `--from`/`--to` label selectors, `--from-namespace`/`--to-namespace`, `--port`, `--by workload\|pod`, `--denies-only`, `--show-allowed`, `--expand-edges`, `--full-why`, `--resolve-fqdn`, `-v`, `-o table\|json\|mermaid\|dot\|html` |
+| `path` | `--port` (number or Service port name, same as a `:port` suffix), `--resolve-fqdn`, `--fail-on-block` (exit 2 when BLOCKED), `-o table\|json` |
+| `ui` | `--listen` (default `127.0.0.1:8471`), `--no-open` |
+| `tui` | none; press `?` inside for the keys |
+| `diff` | `-f` manifest (multi-document YAML, standard or Cilium), `-A`, `--port`, `--by`, `--fail-on-change` (exit 2 when any edge changes), `-o table\|json` |
+| `lint` | `-A`, `-o table\|json` |
+
+Every command accepts the standard kubectl flags: `--kubeconfig`, `--context`,
+`--namespace`/`-n`, `--as`, `--as-group`, `--request-timeout`.
+
+A `path` reference is one of `ns/pod`, `ns/workload`, `ns/service[:port]`,
+`service.ns.svc[.cluster.local][:port]`, `ns:key=value`, a bare name in the
+current namespace, or an external target: `internet`, a host name, an IP or a
+CIDR.
 
 ## Trace: why can't A talk to B?
 
@@ -96,12 +137,11 @@ Path: shop/frontend  →  api.payments.svc.cluster.local:8080
 | NetworkPolicy | standard + Cilium verdict at the pod port, with the deciding policies |
 | Mesh | Istio mTLS STRICT against a sidecar-less source; other mesh policies flagged |
 
-A destination can be `ns/service[:port]`, `service.ns.svc[.cluster.local][:port]`,
-`ns/workload`, `ns/pod`, `ns:key=value`, a bare name in the current namespace,
-or an external target: `internet`, a host name, an IP or a CIDR. For external
-targets the Egress policy layer checks `ipBlock`, Cilium `toEntities`,
-`toCIDR` and `toFQDNs`; `--resolve-fqdn` resolves a host from your machine so
-CIDR rules can be matched. `--fail-on-block` exits 2 when blocked;
+For external targets (`internet`, a host, an IP or a CIDR) the chain is DNS
+egress → Egress policy → Mesh, where the Egress policy layer checks
+`ipBlock`, Cilium `toEntities`, `toCIDR` and `toFQDNs`; `--resolve-fqdn`
+resolves a host from your machine so CIDR rules can be matched. The check is
+static and assumes outbound NAT. `--fail-on-block` exits 2 when blocked;
 `-o json` gives one entry per layer.
 
 ## Web UI
