@@ -1,11 +1,16 @@
 # kubectl-npmap
 
-A NetworkPolicy viewer for Kubernetes. It reads the standard `NetworkPolicy`
-and Cilium `CiliumNetworkPolicy` / `CiliumClusterwideNetworkPolicy` objects in
-a cluster and shows, on a map and in the terminal, **what they allow, what
-they deny, and why A can't reach B**. It never changes the cluster.
+![Policies map: workloads per namespace, green for what rules allow, red for denied, amber where a rule exists but the connection is still denied](docs/policies-map.png)
 
-![Policies map: workloads per namespace, green edges for allowed connections, amber where a rule exists but the connection is still denied](docs/policies-map.png)
+![Policy detail: allowed sources on the left, the selected workloads in the middle, allowed destinations with ports on the right](docs/policy-detail.png)
+
+![Terminal UI: the same in a terminal, k9s-style](docs/terminal.png)
+
+`kubectl npmap` is a NetworkPolicy viewer for Kubernetes. It reads the standard
+`NetworkPolicy` and Cilium `CiliumNetworkPolicy` /
+`CiliumClusterwideNetworkPolicy` objects in a cluster and shows, on a map and
+in the terminal, **what they allow, what they deny, and why A can't reach B**.
+It never changes the cluster.
 
 ## What it does
 
@@ -34,6 +39,8 @@ With Go 1.26:
 
 ```sh
 go install github.com/aganet/kubectl-npmap/cmd/kubectl-npmap@latest
+export PATH="$PATH:$(go env GOPATH)/bin"   # kubectl finds plugins on the PATH; add this to your shell profile
+kubectl npmap --version
 ```
 
 Or a binary from the [releases](https://github.com/aganet/kubectl-npmap/releases)
@@ -157,8 +164,6 @@ static and assumes outbound NAT. `--fail-on-block` exits 2 when blocked;
   cluster's namespaces, workloads, Services and ports; shows the equivalent
   CLI command. Clicking an edge on the map lands here.
 
-![Policy detail: allowed sources on the left, the selected workloads in the middle, allowed destinations with ports on the right](docs/policy-detail.png)
-
 ## Terminal UI
 
 `kubectl npmap tui` is the same thing for a terminal, for jump hosts and SSH
@@ -188,8 +193,6 @@ Keys: arrows or `j`/`k`, `tab` pane, `1`/`2`/`3` view, `enter`, `t` trace,
 `y` YAML, `/` filter, `esc` clear, `d` denied, `r` refresh, `?` help, `q`
 quit; the mouse clicks and scrolls too. Colours follow the terminal's light
 or dark background.
-
-![Terminal UI: namespaces, the policy table and the editor-style detail of one policy](docs/terminal.png)
 
 ## How verdicts work
 
