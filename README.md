@@ -113,7 +113,9 @@ patterns are UNKNOWN) are evaluated. `toCIDR`/`fromCIDR` apply only outside
 the cluster in Cilium and never match a pod. L7 (HTTP/DNS) conditions are not
 evaluated: a rule whose L4 part matches is shown as `ALLOW (L7)`. Selector
 lists within one rule allow independently; `toRequires`/`fromRequires` and
-`toServices` are not evaluated and make the verdict UNKNOWN.
+`toServices` are not evaluated and make the verdict UNKNOWN. A policy Cilium
+rejected (`VALID` false in `kubectl get cnp`) is listed as not enforced, flagged
+by lint `L006`, and ignored by every verdict, which is what the cluster does.
 
 Not evaluated: Cilium `matchExpressions`, `toNodes`, ICMP, host policies,
 `endPort` ranges, protocols; `AdminNetworkPolicy`; Calico and Antrea

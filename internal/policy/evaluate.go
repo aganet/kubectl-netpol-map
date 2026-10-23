@@ -192,8 +192,8 @@ func newEvalContext(snap *Snapshot) evalContext {
 	}
 	return evalContext{
 		policies: snap.Policies,
-		cnps:     snap.CiliumNamespacePolicies,
-		ccnps:    snap.CiliumClusterPolicies,
+		cnps:     enforcedCilium(snap.CiliumNamespacePolicies),
+		ccnps:    enforcedCilium(snap.CiliumClusterPolicies),
 		resolver: resolver,
 		podIPs:   podIPIndex(refs),
 		nsLabels: snap.NamespaceLabels,

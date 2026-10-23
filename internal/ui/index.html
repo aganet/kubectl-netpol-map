@@ -491,6 +491,7 @@ function buildPolicyGraph(policies) {
     edges.get(k).lines.push(`${p.kind === 'NetworkPolicy' ? 'NP' : p.kind === 'CiliumNetworkPolicy' ? 'CNP' : 'CCNP'} ${p.namespace ? p.namespace + '/' : ''}${p.name} · ${dir} · ${rule.ports.join(', ')}${rule.l7 ? ' · L7' : ''}`);
   };
   policies.forEach((p) => {
+    if (p.rejected) return; // Cilium does not enforce it: it opens and isolates nothing
     const sel = p.selected.map(ensure);
     sel.forEach((n) => { n.touched = true; n.I = n.I || p.isolatesIngress; n.E = n.E || p.isolatesEgress; });
     p.ingress.forEach((rule) => rule.peers.forEach((peer) => {
@@ -723,7 +724,7 @@ function renderPolicyList(policies) {
     const denies = [...p.ingress, ...p.egress].filter((r) => r.deny).length; const l7 = [...p.ingress, ...p.egress].some((r) => r.l7);
     return `<div class="pitem${p.key === state.pSelected ? ' active' : ''}" data-p="${esc(p.key)}">
       <div class="name">${kindBadge(p.kind)} ${esc((p.namespace ? p.namespace + '/' : '') + p.name)}</div>
-      <div class="badges">${p.isolatesIngress ? '<span class="badge i">I</span>' : ''}${p.isolatesEgress ? '<span class="badge e">E</span>' : ''}${denies ? `<span class="badge deny">${denies} deny</span>` : ''}${l7 ? '<span class="badge l7">L7</span>' : ''}${findingBadges(p)}</div>
+      <div class="badges">${p.rejected ? `<span class="badge deny" title="${esc(p.rejected)}">NOT ENFORCED</span>` : ''}${p.isolatesIngress ? '<span class="badge i">I</span>' : ''}${p.isolatesEgress ? '<span class="badge e">E</span>' : ''}${denies ? `<span class="badge deny">${denies} deny</span>` : ''}${l7 ? '<span class="badge l7">L7</span>' : ''}${findingBadges(p)}</div>
       <div class="meta">selects ${esc(p.selector)} → ${p.selected.length} workload${p.selected.length === 1 ? '' : 's'} · ${p.ingress.length} ingress / ${p.egress.length} egress rules</div></div>`;
   }).join('') : '<div class="empty">No policies match.</div>';
   $('#pList').querySelectorAll('.pitem').forEach((el) => el.addEventListener('click', () => selectPolicy(el.dataset.p)));
@@ -750,7 +751,7 @@ function renderPolicyDetail(p) {
   const fs = findingsFor(p);
   const lock = (dir, isolated) => `<span class="pill ${isolated ? 'fail' : 'ok'}">${dir}: ${isolated ? 'default deny' : 'default allow'}</span>`;
   const denyAll = (dir) => `<div class="ecard deny" data-side="${dir === 'ingress' ? 'in' : 'out'}"><div class="rhdr"><svg class="ico"><use href="#ico-globe"/></svg>Nothing<span class="sp"></span><span class="badge deny">DENY ALL</span></div><div class="note">${dir} is isolated and no rule allows anything</div></div>`;
-  d.innerHTML = `<svg class="connectors"></svg>${fs.length ? `<div style="margin-bottom:14px">${findingsHTML(fs)}</div>` : ''}<div class="cols">
+  d.innerHTML = `<svg class="connectors"></svg>${p.rejected ? `<div class="error" style="margin-bottom:14px"><b>Not enforced.</b> Cilium rejected this policy (status Valid=False): ${esc(p.rejected)}. It takes no part in any verdict until it is fixed.</div>` : ''}${fs.length ? `<div style="margin-bottom:14px">${findingsHTML(fs)}</div>` : ''}<div class="cols">
     <div class="col"><h4><span>Ingress · allowed sources</span></h4>${p.isolatesIngress ? (p.ingress.length ? p.ingress.map((r, i) => ruleCard(r, i, 'in', p.namespace)).join('') : denyAll('ingress')) : '<div class="note">this policy does not restrict ingress</div>'}</div>
     <div class="col"><h4><span>Selected workloads</span></h4>
       <div class="center" id="pCenter"><div class="rhdr"><svg class="ico"><use href="#${p.kind === 'CiliumClusterwideNetworkPolicy' ? 'ico-cluster' : 'ico-ns'}"/></svg>${esc((p.namespace ? p.namespace + '/' : '') + p.name)}</div><div class="sel">${esc(p.kind)} · selects ${esc(p.selector)}${p.kind === 'CiliumClusterwideNetworkPolicy' ? ' (cluster-wide)' : ''}</div>

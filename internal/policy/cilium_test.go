@@ -72,6 +72,33 @@ func TestCiliumResolvedFQDNAndDNSRuleAreDecidable(t *testing.T) {
 	}
 }
 
+// A policy Cilium refused to import (status Valid=False) is not enforced:
+// verdicts ignore it, it isolates nothing, and the view says why.
+func TestCiliumRejectedPolicyIsNotEnforced(t *testing.T) {
+	src := pod("shop", "worker-1", map[string]string{"app": "worker"})
+	dst := readyPod("payments", "api-1", map[string]string{"app": "api"}, nil)
+	policy := cnp("shop", map[string]interface{}{"toEntities": []interface{}{"world"}})
+	policy.Object["status"] = map[string]interface{}{"conditions": []interface{}{
+		map[string]interface{}{"type": "Valid", "status": "False", "message": "Invalid CiliumNetworkPolicy spec: empty egress rule"},
+	}}
+	snap := &Snapshot{Pods: []corev1.Pod{src, dst}, CiliumNamespacePolicies: []unstructured.Unstructured{policy}}
+
+	res, err := ExplainPath(snap, "", "shop/worker-1", "payments/api-1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Cell.Allowed || res.Cell.Unknown {
+		t.Errorf("a rejected policy must not affect the verdict: expected ALLOW, got %+v", res.Cell)
+	}
+	views, cov := Describe(snap)
+	if len(views) != 1 || views[0].Rejected == "" || views[0].IsolatesEgress {
+		t.Errorf("view must carry the rejection and isolate nothing: %+v", views)
+	}
+	if cov.IsolatedEgress != 0 || len(cov.Unprotected) != 2 {
+		t.Errorf("rejected policy must not count as coverage: %+v", cov)
+	}
+}
+
 // Entities and CIDRs follow Cilium's definitions: "cluster"/"all" cover
 // pods, "world" does not, and CIDR rules apply only outside the cluster, so
 // a CIDR that happens to cover a pod's IP still does not allow pod traffic.

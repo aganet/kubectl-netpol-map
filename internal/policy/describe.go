@@ -25,6 +25,9 @@ type PolicyView struct {
 	IsolatesEgress  bool          `json:"isolatesEgress"`
 	Ingress         []RuleView    `json:"ingress"`
 	Egress          []RuleView    `json:"egress"`
+	// Rejected is why Cilium refused the policy (status Valid=False); it is
+	// then not enforced and ignored by every verdict.
+	Rejected string `json:"rejected,omitempty"`
 }
 
 // WorkloadRef identifies a workload and how many pods it has.
@@ -83,7 +86,7 @@ func Describe(snap *Snapshot) ([]PolicyView, Coverage) {
 				out = out || hasType(np, networkingv1.PolicyTypeEgress)
 			}
 		}
-		for _, p := range append(append([]unstructured.Unstructured{}, snap.CiliumNamespacePolicies...), snap.CiliumClusterPolicies...) {
+		for _, p := range append(append([]unstructured.Unstructured{}, ctx.cnps...), ctx.ccnps...) {
 			if selectsForCilium(p, rep) {
 				in = in || policyHasSection(p, "ingress")
 				out = out || policyHasSection(p, "egress")
@@ -207,13 +210,15 @@ func selectorText(s string) string {
 }
 
 func describeCilium(p unstructured.Unstructured, workloads []Workload) PolicyView {
+	rejected, isRejected := CiliumRejected(p)
 	v := PolicyView{
 		Key: p.GetKind() + "/" + ciliumPolicyKey(p), Kind: p.GetKind(),
 		Namespace: p.GetNamespace(), Name: p.GetName(),
-		IsolatesIngress: policyHasSection(p, "ingress"),
-		IsolatesEgress:  policyHasSection(p, "egress"),
+		IsolatesIngress: !isRejected && policyHasSection(p, "ingress"),
+		IsolatesEgress:  !isRejected && policyHasSection(p, "egress"),
 		Ingress:         []RuleView{}, Egress: []RuleView{},
 	}
+	v.Rejected = rejected
 	sel, _, _ := unstructured.NestedMap(p.Object, "spec", "endpointSelector", "matchLabels")
 	v.Selector = selectorText(ciliumLabelsText(sel))
 	v.Selected = matchingWorkloads(workloads, func(pod corev1.Pod) bool { return selectsForCilium(p, pod) })

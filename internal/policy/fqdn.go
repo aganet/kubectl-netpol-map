@@ -247,7 +247,9 @@ func fqdnDecidable(ctx evalContext, rule map[string]interface{}) bool {
 	return true
 }
 
-func cidrTargets(rule map[string]interface{}) []string { return cidrEntries(rule, "toCIDR", "toCIDRSet") }
+func cidrTargets(rule map[string]interface{}) []string {
+	return cidrEntries(rule, "toCIDR", "toCIDRSet")
+}
 
 // cidrEntries lists the CIDRs of a rule's plain list and set fields; set
 // entries carry their except list as "<cidr> except <a>,<b>", the same form

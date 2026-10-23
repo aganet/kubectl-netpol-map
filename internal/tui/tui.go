@@ -1266,6 +1266,9 @@ func renderPolicy(p policy.PolicyView, findings []lint.Finding, w int) string {
 		return sOK.Render(dir + ": default allow")
 	}
 	out = append(out, sTitle.Render(p.Kind+" "+name)+"  "+sMuted.Render("selects "+p.Selector)+"   "+iso("ingress", p.IsolatesIngress)+" · "+iso("egress", p.IsolatesEgress))
+	if p.Rejected != "" {
+		out = append(out, sFail.Render("NOT ENFORCED")+" Cilium rejected this policy: "+p.Rejected)
+	}
 	for _, f := range findings {
 		out = append(out, sWarn.Render(f.Code)+" "+f.Message+sMuted.Render("  "+f.Hint))
 	}

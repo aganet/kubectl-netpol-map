@@ -11,6 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/aganet/kubectl-netpol-map/internal/policy"
@@ -74,6 +75,7 @@ var allRules = []rule{
 	ruleL003AllowFromAnywhere,
 	ruleL004IsolationOverlap,
 	ruleL005StandardCiliumOverlap,
+	ruleL006CiliumRejected,
 }
 
 // L001: a NetworkPolicy's podSelector matches zero pods in its namespace.
@@ -226,6 +228,30 @@ func ruleL005StandardCiliumOverlap(snap *policy.Snapshot) []Finding {
 				})
 			}
 		}
+	}
+	return out
+}
+
+// L006: Cilium refused to import the policy (status Valid=False). It is not
+// enforced, so whatever it was meant to deny is currently allowed.
+func ruleL006CiliumRejected(snap *policy.Snapshot) []Finding {
+	out := []Finding{}
+	for _, p := range append(append([]unstructured.Unstructured{}, snap.CiliumNamespacePolicies...), snap.CiliumClusterPolicies...) {
+		msg, rejected := policy.CiliumRejected(p)
+		if !rejected {
+			continue
+		}
+		subject := p.GetName()
+		if p.GetNamespace() != "" {
+			subject = p.GetNamespace() + "/" + p.GetName()
+		}
+		out = append(out, Finding{
+			Code:     "L006",
+			Severity: SevError,
+			Subject:  subject,
+			Message:  "rejected by Cilium, not enforced: " + msg,
+			Hint:     "fix the policy until kubectl get " + strings.ToLower(p.GetKind()) + " shows VALID=True; until then it protects nothing",
+		})
 	}
 	return out
 }

@@ -181,6 +181,40 @@ func selectsForCilium(p unstructured.Unstructured, pod corev1.Pod) bool {
 	return s.Matches(labels.Set(pod.Labels))
 }
 
+// CiliumRejected reports whether Cilium refused to import the policy
+// (status condition Valid=False, the VALID column of kubectl get cnp) and
+// why. A rejected policy is not enforced at all, so it is listed but takes
+// no part in verdicts. Manifests read offline carry no status and count as
+// enforced.
+func CiliumRejected(p unstructured.Unstructured) (string, bool) {
+	conds, _, _ := unstructured.NestedSlice(p.Object, "status", "conditions")
+	for _, c := range conds {
+		m, ok := c.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if m["type"] == "Valid" && m["status"] == "False" {
+			msg, _ := m["message"].(string)
+			if msg == "" {
+				msg = "status condition Valid=False"
+			}
+			return msg, true
+		}
+	}
+	return "", false
+}
+
+// enforcedCilium drops the policies Cilium rejected.
+func enforcedCilium(ps []unstructured.Unstructured) []unstructured.Unstructured {
+	out := ps[:0:0]
+	for _, p := range ps {
+		if _, rejected := CiliumRejected(p); !rejected {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func policyHasSection(p unstructured.Unstructured, key string) bool {
 	list, found, _ := unstructured.NestedSlice(p.Object, "spec", key)
 	return found && len(list) > 0
