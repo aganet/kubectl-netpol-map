@@ -107,6 +107,9 @@ type Matrix struct {
 	Policies          []networkingv1.NetworkPolicy
 	CiliumPolicies    []unstructured.Unstructured
 	CiliumClusterwide []unstructured.Unstructured
+	// Unevaluated names policy kinds in the cluster this tool ignores; the
+	// verdicts may then be wrong.
+	Unevaluated []string
 
 	// ExternalEgress lists allowed egress to destinations that are not
 	// in-cluster pods (FQDNs that resolve externally, CIDRs, entities),
@@ -164,6 +167,7 @@ func (basicEvaluator) Evaluate(snap *Snapshot, mode GroupBy, rowSel, colSel stri
 		Policies:          snap.Policies,
 		CiliumPolicies:    snap.CiliumNamespacePolicies,
 		CiliumClusterwide: snap.CiliumClusterPolicies,
+		Unevaluated:       snap.Unevaluated,
 	}
 	m.Cells = make([][]Cell, len(rows))
 	for i := range rows {

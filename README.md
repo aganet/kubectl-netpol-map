@@ -12,17 +12,18 @@ allow and deny, and why A can't reach B. Web UI, terminal UI and CLI. Read-only.
 ## Install
 
 ```sh
-go install github.com/aganet/kubectl-netpol-map/cmd/kubectl-netpol-map@latest
+go install github.com/aganet/kubectl-netpol-map/cmd/kubectl-netpol_map@latest
 export PATH="$PATH:$(go env GOPATH)/bin"   # kubectl finds plugins on the PATH
 ```
 
 Or a binary from [releases](https://github.com/aganet/kubectl-netpol-map/releases)
-(macOS, Linux, Windows; amd64, arm64), placed on your `PATH` as `kubectl-netpol-map`:
+(macOS, Linux, Windows; amd64, arm64), placed on your `PATH` as `kubectl-netpol_map`
+(the underscore is how kubectl maps `kubectl netpol-map` to a plugin):
 
 ```sh
-V=0.2.1; OS=darwin; ARCH=arm64
+V=0.2.2; OS=darwin; ARCH=arm64
 curl -LO https://github.com/aganet/kubectl-netpol-map/releases/download/v$V/kubectl-netpol-map_${V}_${OS}_${ARCH}.tar.gz
-tar -xzf kubectl-netpol-map_${V}_${OS}_${ARCH}.tar.gz && sudo install -m 0755 kubectl-netpol-map /usr/local/bin/
+tar -xzf kubectl-netpol-map_${V}_${OS}_${ARCH}.tar.gz && sudo install -m 0755 kubectl-netpol_map /usr/local/bin/
 ```
 
 ## Commands
@@ -128,8 +129,9 @@ by lint `L006`, and ignored by every verdict, which is what the cluster does.
 Ports carry their protocol and `endPort` range in both engines; a rule on
 the wrong protocol or a named port the pod does not declare opens nothing.
 Not evaluated: Cilium `toNodes`, host policies, ICMP conditions (an
-`icmps`-only rule opens no TCP/UDP port); `AdminNetworkPolicy`; Calico and
-Antrea policies. `path` is static: it reads objects, sends no packets, assumes
+`icmps`-only rule opens no TCP/UDP port). `AdminNetworkPolicy`, Calico and
+Antrea policies are not evaluated either; when any exist, every output says
+so and lint reports `L007`, because verdicts may then be wrong. `path` is static: it reads objects, sends no packets, assumes
 CoreDNS in `kube-system` and outbound NAT. FQDN resolution uses the DNS of
 the machine running the tool, which can differ from the cluster's.
 

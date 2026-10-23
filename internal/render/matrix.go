@@ -36,7 +36,7 @@ func Matrix(w io.Writer, m *policy.Matrix) error {
 func MatrixWithOptions(w io.Writer, m *policy.Matrix, opts Options) error {
 	view := applyNamespaceFilter(m)
 	if len(view.Rows) == 0 || len(view.Cols) == 0 {
-		fmt.Fprintln(w, "no pods in selection")
+		fmt.Fprintln(w, "no pods match the selection; check --from/--to, --from-namespace/--to-namespace, or use -A")
 		return nil
 	}
 
@@ -130,6 +130,9 @@ func printHeader(w io.Writer, m *policy.Matrix, view matrixView, opts Options) {
 		fmt.Sprintf("pods: %d", m.PodCount),
 		fmt.Sprintf("standard policies: %d", len(m.Policies)),
 		fmt.Sprintf("cilium policies: %d", len(m.CiliumPolicies)+len(m.CiliumClusterwide)),
+	}
+	if len(m.Unevaluated) > 0 {
+		parts = append(parts, text.FgYellow.Sprintf("NOT EVALUATED, verdicts may be wrong: %s", strings.Join(m.Unevaluated, ", ")))
 	}
 	if m.Port != 0 {
 		parts = append(parts, fmt.Sprintf("port filter: %d", m.Port))

@@ -2,6 +2,7 @@ package policy
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -34,6 +35,9 @@ func fakeClients(t *testing.T, objs []runtime.Object, crs ...*unstructured.Unstr
 		ccnpGVR: "CiliumClusterwideNetworkPolicyList",
 		{Group: "security.istio.io", Version: "v1", Resource: "peerauthentications"}: "PeerAuthenticationList",
 	}
+	for _, k := range unevaluatedKinds {
+		listKinds[k.gvr] = strings.ReplaceAll(k.kind, " ", "") + "List"
+	}
 	dyn := make([]runtime.Object, 0, len(crs))
 	for _, c := range crs {
 		dyn = append(dyn, c)
@@ -50,11 +54,15 @@ func TestFetchListsEverythingClusterWide(t *testing.T) {
 		&corev1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: "payments", Name: "api"}},
 		&appsv1.ReplicaSet{ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "frontend-abc"}},
 		&networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Namespace: "payments", Name: "deny-all"}},
-	}, cr("cilium.io/v2", "CiliumNetworkPolicy", "shop", "egress"), cr("cilium.io/v2", "CiliumClusterwideNetworkPolicy", "", "baseline"))
+	}, cr("cilium.io/v2", "CiliumNetworkPolicy", "shop", "egress"), cr("cilium.io/v2", "CiliumClusterwideNetworkPolicy", "", "baseline"),
+		cr("policy.networking.k8s.io/v1alpha1", "AdminNetworkPolicy", "", "cluster-baseline"))
 
 	snap, err := Fetch(context.Background(), c, "")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(snap.Unevaluated) != 1 || snap.Unevaluated[0] != "AdminNetworkPolicy ×1" {
+		t.Errorf("policy kinds the tool ignores must be reported: %v", snap.Unevaluated)
 	}
 	if len(snap.Pods) != 2 || len(snap.Services) != 1 || len(snap.ReplicaSets) != 1 || len(snap.Policies) != 1 {
 		t.Errorf("unexpected counts: pods %d services %d rs %d policies %d", len(snap.Pods), len(snap.Services), len(snap.ReplicaSets), len(snap.Policies))

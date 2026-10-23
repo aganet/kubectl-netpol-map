@@ -156,6 +156,10 @@ func loadObject(snap *Snapshot, u unstructured.Unstructured, doc []byte, podIP *
 		markReady(&pod, podIP)
 		snap.Pods = append(snap.Pods, pod)
 	case "NetworkPolicy":
+		if group != "networking.k8s.io" { // Calico and Antrea reuse the kind name
+			snap.Unevaluated = append(snap.Unevaluated, group+" "+u.GetKind()+" "+u.GetName())
+			return nil
+		}
 		var np networkingv1.NetworkPolicy
 		if err := yaml.Unmarshal(doc, &np); err != nil {
 			return err
@@ -181,6 +185,8 @@ func loadObject(snap *Snapshot, u unstructured.Unstructured, doc []byte, podIP *
 		if group == "policy.linkerd.io" {
 			snap.Mesh.LinkerdServers = append(snap.Mesh.LinkerdServers, u)
 		}
+	case "AdminNetworkPolicy", "BaselineAdminNetworkPolicy", "GlobalNetworkPolicy", "ClusterNetworkPolicy":
+		snap.Unevaluated = append(snap.Unevaluated, group+" "+u.GetKind()+" "+u.GetName())
 	}
 	return nil
 }

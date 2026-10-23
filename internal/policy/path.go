@@ -157,6 +157,10 @@ func ExplainPath(snap *Snapshot, defaultNS, srcRef, dstRef, port string) (*PathR
 	}
 
 	res := &PathResult{SrcRef: srcRef, DstRef: dstRef, Port: dst.port, SrcPods: podNames(srcPods)}
+	if len(snap.Unevaluated) > 0 {
+		res.Layers = append(res.Layers, Layer{Name: "Other policies", Status: LayerWarn,
+			Summary: "present but not evaluated, so this verdict may be wrong: " + strings.Join(snap.Unevaluated, ", ")})
+	}
 	ctx := newEvalContext(snap)
 
 	// "name.ns" without a .svc suffix is a Service only if that namespace

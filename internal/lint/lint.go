@@ -76,6 +76,7 @@ var allRules = []rule{
 	ruleL004IsolationOverlap,
 	ruleL005StandardCiliumOverlap,
 	ruleL006CiliumRejected,
+	ruleL007Unevaluated,
 }
 
 // L001: a NetworkPolicy's podSelector matches zero pods in its namespace.
@@ -251,6 +252,22 @@ func ruleL006CiliumRejected(snap *policy.Snapshot) []Finding {
 			Subject:  subject,
 			Message:  "rejected by Cilium, not enforced: " + msg,
 			Hint:     "fix the policy until kubectl get " + strings.ToLower(p.GetKind()) + " shows VALID=True; until then it protects nothing",
+		})
+	}
+	return out
+}
+
+// L007: policies of a kind this tool does not evaluate exist, so every
+// verdict it gives may be wrong.
+func ruleL007Unevaluated(snap *policy.Snapshot) []Finding {
+	out := []Finding{}
+	for _, u := range snap.Unevaluated {
+		out = append(out, Finding{
+			Code:     "L007",
+			Severity: SevError,
+			Subject:  u,
+			Message:  "not evaluated by this tool; verdicts may be wrong where it applies",
+			Hint:     "review that policy by hand; only NetworkPolicy and Cilium policies are evaluated",
 		})
 	}
 	return out

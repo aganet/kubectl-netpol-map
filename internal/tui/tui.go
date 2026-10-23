@@ -86,6 +86,7 @@ type picker struct {
 type Model struct {
 	fetch   func(context.Context) (*policy.Snapshot, error)
 	ctxName string
+	version string
 
 	d       *data
 	err     error
@@ -115,12 +116,12 @@ type Model struct {
 }
 
 // New builds the model; fetch produces a cluster-wide snapshot.
-func New(fetch func(context.Context) (*policy.Snapshot, error), ctxName string) Model {
+func New(fetch func(context.Context) (*policy.Snapshot, error), ctxName, version string) Model {
 	f := textinput.New()
 	f.Prompt = "/ "
 	f.Placeholder = "filter"
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(sAccent))
-	return Model{fetch: fetch, ctxName: ctxName, filter: f, spin: sp, loading: true, pane: paneList}
+	return Model{fetch: fetch, ctxName: ctxName, version: version, filter: f, spin: sp, loading: true, pane: paneList}
 }
 
 // Run starts the app in the alternate screen with mouse support.
@@ -833,6 +834,9 @@ func (m Model) renderHeader() string {
 			k("isolated")+sAccent.Render(fmt.Sprintf("%d/%d ingress · %d/%d egress", c.IsolatedIngress, c.Workloads, c.IsolatedEgress, c.Workloads)),
 			k("untouched")+sWarn.Render(fmt.Sprintf("%d workloads with no policy (all traffic allowed)", len(c.Unprotected))),
 			k("refreshed")+m.d.at.Format("15:04:05"))
+		if len(m.d.snap.Unevaluated) > 0 { // the header has a fixed height, so this rides on the cluster line
+			lines[len(lines)-4] += "   " + sFail.Render("not evaluated, verdicts may be wrong: "+strings.Join(m.d.snap.Unevaluated, ", "))
+		}
 	default:
 		lines = append(lines, k("")+m.spin.View()+" reading the cluster…")
 	}
@@ -863,7 +867,7 @@ func (m Model) renderStatus() string {
 			mid += sMuted.Render("  denied hidden (d)")
 		}
 	}
-	right := sMuted.Render("? help  ·  t trace  ·  y yaml  ·  q quit")
+	right := sMuted.Render("? help  ·  t trace  ·  y yaml  ·  q quit  ·  " + m.version)
 	gap1 := max(1, (m.width-lipgloss.Width(left)-lipgloss.Width(mid)-lipgloss.Width(right))/2)
 	return " " + left + strings.Repeat(" ", gap1) + mid + strings.Repeat(" ", max(1, m.width-1-lipgloss.Width(left)-gap1-lipgloss.Width(mid)-lipgloss.Width(right))) + right
 }

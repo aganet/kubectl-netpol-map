@@ -62,6 +62,16 @@ spec:
     - from:
         - podSelector: {matchLabels: {app: api}}
       ports: [{port: postgres}]
+---
+apiVersion: projectcalico.org/v3
+kind: NetworkPolicy
+metadata: {name: calico-rule, namespace: shop}
+spec: {selector: all()}
+---
+apiVersion: policy.networking.k8s.io/v1alpha1
+kind: AdminNetworkPolicy
+metadata: {name: cluster-baseline}
+spec: {priority: 10, subject: {namespaces: {}}}
 `
 
 func TestLoadManifestsSynthesisesPodsAndEvaluates(t *testing.T) {
@@ -79,6 +89,11 @@ func TestLoadManifestsSynthesisesPodsAndEvaluates(t *testing.T) {
 	if len(snap.Pods) != 2 || len(snap.Services) != 1 || len(snap.Policies) != 1 {
 		t.Fatalf("pods %d services %d policies %d", len(snap.Pods), len(snap.Services), len(snap.Policies))
 	}
+	// A Calico NetworkPolicy shares the kind name but is not a standard
+	// policy; it and the AdminNetworkPolicy are reported, not evaluated.
+	if len(snap.Unevaluated) != 2 || snap.Unevaluated[0] != "projectcalico.org NetworkPolicy calico-rule" || snap.Unevaluated[1] != "policy.networking.k8s.io AdminNetworkPolicy cluster-baseline" {
+		t.Errorf("unevaluated kinds: %v", snap.Unevaluated)
+	}
 	if snap.NamespaceLabels["shop"]["team"] != "web" || snap.NamespaceLabels["shop"]["kubernetes.io/metadata.name"] != "shop" {
 		t.Errorf("namespace labels: %v", snap.NamespaceLabels["shop"])
 	}
@@ -94,6 +109,9 @@ func TestLoadManifestsSynthesisesPodsAndEvaluates(t *testing.T) {
 	}
 	if res.Verdict() != "BLOCKED at NetworkPolicy" || res.TargetPort != 5432 {
 		t.Errorf("expected BLOCKED at NetworkPolicy on 5432, got %q (%d); layers %+v", res.Verdict(), res.TargetPort, res.Layers)
+	}
+	if l := findLayer(res, "Other policies"); l.Status != LayerWarn {
+		t.Errorf("unevaluated policy kinds must be flagged on every trace: %+v", res.Layers)
 	}
 	if l := findLayer(res, "Service"); l.Status != LayerPass {
 		t.Errorf("synthetic pods must count as Ready endpoints: %+v", l)
