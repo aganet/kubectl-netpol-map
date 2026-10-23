@@ -105,7 +105,9 @@ Anything that depends on a rule the engine can't evaluate (Cilium L7,
 unresolved FQDN, CIDR, entity) is `UNKNOWN`, never a false `DENY`.
 
 **Cilium rules, pod-to-pod.** `toEndpoints`/`fromEndpoints` (`matchLabels`
-only), `toEntities`/`fromEntities` (`cluster` and `all` match pods; `world`,
+and `matchExpressions`, with Cilium's namespace, namespace-label and
+service-account labels; a CNP peer without a namespace key stays in its own
+namespace), `toEntities`/`fromEntities` (`cluster` and `all` match pods; `world`,
 `host`, `remote-node`, `kube-apiserver` and the others do not), and
 `toFQDNs` (a pod matches only if a name resolves to its IP; names that all
 resolve elsewhere are a decided non-match; unresolved names and wildcard
@@ -117,7 +119,7 @@ lists within one rule allow independently; `toRequires`/`fromRequires` and
 rejected (`VALID` false in `kubectl get cnp`) is listed as not enforced, flagged
 by lint `L006`, and ignored by every verdict, which is what the cluster does.
 
-Not evaluated: Cilium `matchExpressions`, `toNodes`, ICMP, host policies,
+Not evaluated: Cilium `toNodes`, ICMP, host policies,
 `endPort` ranges, protocols; `AdminNetworkPolicy`; Calico and Antrea
 policies. `path` is static: it reads objects, sends no packets, assumes
 CoreDNS in `kube-system` and outbound NAT. FQDN resolution uses the DNS of

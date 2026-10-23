@@ -212,12 +212,12 @@ func hasIPBlockRules(ps []networkingv1.NetworkPolicy) bool {
 func ciliumExternalEgress(ctx evalContext, src corev1.Pod, t externalTarget, port int32) externalVerdict {
 	var applicable []unstructured.Unstructured
 	for _, p := range ctx.cnps {
-		if p.GetNamespace() == src.Namespace && selectsForCilium(p, src) {
+		if p.GetNamespace() == src.Namespace && selectsForCilium(ctx, p, src) {
 			applicable = append(applicable, p)
 		}
 	}
 	for _, p := range ctx.ccnps {
-		if selectsForCilium(p, src) {
+		if selectsForCilium(ctx, p, src) {
 			applicable = append(applicable, p)
 		}
 	}

@@ -183,7 +183,7 @@ func collectExternalEgress(ctx evalContext, rows []Axis, resolver Resolver) []Ex
 		}
 
 		for _, p := range append(append([]unstructured.Unstructured{}, ctx.cnps...), ctx.ccnps...) {
-			if !selectsForCilium(p, *rep) || !policyHasSection(p, "egress") {
+			if !selectsForCilium(ctx, p, *rep) || !policyHasSection(p, "egress") {
 				continue
 			}
 			rules, _, _ := unstructured.NestedSlice(p.Object, "spec", "egress")

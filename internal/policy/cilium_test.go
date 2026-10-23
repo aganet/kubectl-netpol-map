@@ -72,6 +72,66 @@ func TestCiliumResolvedFQDNAndDNSRuleAreDecidable(t *testing.T) {
 	}
 }
 
+// Selectors follow Cilium's matching: matchExpressions are evaluated, a
+// CNP peer without a namespace key is limited to the policy namespace, and
+// namespace labels select across namespaces (also in a CCNP endpointSelector).
+func TestCiliumSelectorsNamespacesAndExpressions(t *testing.T) {
+	src := pod("shop", "worker-1", map[string]string{"app": "worker"})
+	dst := readyPod("payments", "api-1", map[string]string{"app": "api"}, nil)
+	other := readyPod("ops", "api-1", map[string]string{"app": "api"}, nil)
+	nsLabels := map[string]map[string]string{"shop": {"team": "web"}, "payments": {"team": "money"}, "ops": {}}
+	verdict := func(snap *Snapshot, to string) Cell {
+		snap.NamespaceLabels = nsLabels
+		res, err := ExplainPath(snap, "", "shop/worker-1", to, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Cell
+	}
+	api := map[string]interface{}{"matchLabels": map[string]interface{}{"k8s:app": "api"}}
+	snap := &Snapshot{Pods: []corev1.Pod{src, dst}, CiliumNamespacePolicies: []unstructured.Unstructured{cnp("shop",
+		map[string]interface{}{"toEndpoints": []interface{}{api}})}}
+	if c := verdict(snap, "payments/api-1"); c.Allowed {
+		t.Errorf("a CNP peer without a namespace key stays in the policy namespace: expected DENY, got %+v", c)
+	}
+	inPayments := map[string]interface{}{"matchLabels": map[string]interface{}{"k8s:app": "api"}, "matchExpressions": []interface{}{
+		map[string]interface{}{"key": "k8s:io.kubernetes.pod.namespace", "operator": "In", "values": []interface{}{"payments"}}}}
+	snap = &Snapshot{Pods: []corev1.Pod{src, dst}, CiliumNamespacePolicies: []unstructured.Unstructured{cnp("shop",
+		map[string]interface{}{"toEndpoints": []interface{}{inPayments}})}}
+	if c := verdict(snap, "payments/api-1"); !c.Allowed {
+		t.Errorf("matchExpressions on the namespace key must select payments: got %+v", c)
+	}
+	byNSLabel := map[string]interface{}{"matchLabels": map[string]interface{}{"k8s:io.cilium.k8s.namespace.labels.team": "money"}}
+	snap = &Snapshot{Pods: []corev1.Pod{src, dst, other}, CiliumNamespacePolicies: []unstructured.Unstructured{cnp("shop",
+		map[string]interface{}{"toEndpoints": []interface{}{byNSLabel}})}}
+	if c := verdict(snap, "payments/api-1"); !c.Allowed {
+		t.Errorf("namespace labels must select payments: got %+v", c)
+	}
+	if c := verdict(snap, "ops/api-1"); c.Allowed {
+		t.Errorf("namespace labels must not select ops: got %+v", c)
+	}
+	// A cluster-wide policy selecting by namespace label isolates shop only.
+	ccnp := cnp("", map[string]interface{}{"toEntities": []interface{}{"world"}})
+	ccnp.Object["kind"] = "CiliumClusterwideNetworkPolicy"
+	ccnp.Object["metadata"] = map[string]interface{}{"name": "web-egress"}
+	ccnp.Object["spec"].(map[string]interface{})["endpointSelector"] = map[string]interface{}{"matchLabels": map[string]interface{}{"io.cilium.k8s.namespace.labels.team": "web"}}
+	snap = &Snapshot{Pods: []corev1.Pod{src, dst, other}, CiliumClusterPolicies: []unstructured.Unstructured{ccnp}}
+	if c := verdict(snap, "payments/api-1"); c.Allowed {
+		t.Errorf("CCNP selecting namespace team=web must isolate shop: expected DENY, got %+v", c)
+	}
+	snap.NamespaceLabels = nsLabels
+	res, err := ExplainPath(snap, "", "ops/api-1", "payments/api-1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Cell.Allowed {
+		t.Errorf("CCNP must not select ops: expected ALLOW, got %+v", res.Cell)
+	}
+	if views, _ := Describe(snap); views[0].Selector != "io.cilium.k8s.namespace.labels.team=web" || len(views[0].Selected) != 1 {
+		t.Errorf("unexpected CCNP view: %+v", views[0])
+	}
+}
+
 // A policy Cilium refused to import (status Valid=False) is not enforced:
 // verdicts ignore it, it isolates nothing, and the view says why.
 func TestCiliumRejectedPolicyIsNotEnforced(t *testing.T) {

@@ -128,6 +128,7 @@
   .map .edge.allow { stroke: var(--edge-allow); } .map .edge.deny { stroke: var(--edge-deny); stroke-dasharray: 7 5; stroke-width: 1.6; opacity: .7; }
   .map .edge.partial { stroke: var(--edge-warn); } .map .edge.unknown { stroke: var(--edge-warn); stroke-dasharray: 2 5; }
   .map .edge.blocked { stroke: var(--edge-warn); stroke-dasharray: 7 5; }
+  .map .edge.rejected { stroke: var(--skip); stroke-dasharray: 3 5; } .map .stub.rejected { fill: var(--skip); }
   .map .edge:hover, .map .edge.hl { stroke-width: 4; opacity: 1; }
   .map .stub { rx: 2; pointer-events: none; }
   .map .stub.allow { fill: var(--edge-allow); } .map .stub.deny { fill: var(--edge-deny); } .map .stub.blocked, .map .stub.partial, .map .stub.unknown { fill: var(--edge-warn); }
@@ -234,6 +235,7 @@
         <label><input type="checkbox" value="blocked" checked><i class="blocked"></i>rule exists, still denied</label>
         <label><input type="checkbox" value="deny"><i class="deny"></i>denied</label>
         <label><input type="checkbox" value="uncertain" checked><i class="partial"></i>partial / unknown</label>
+        <label><input type="checkbox" value="rejected" checked><i class="rejected"></i>not enforced (rejected by Cilium)</label>
       </div>
       <div class="maptools"><label>Zoom <input type="range" class="zoom" data-map="pmap" min="50" max="160" value="100"></label><button class="btn small" data-reset="pmap" title="Put the namespaces back in a row">Reset layout</button><button class="btn small" data-dl="pmap">Download SVG</button></div>
     </div>
@@ -283,7 +285,7 @@
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const GLYPH = { pass: '✓', fail: '✗', warn: '!', skip: '–' };
-const PILL = { allow: 'ok', deny: 'fail', partial: 'warn', unknown: 'unknown', blocked: 'warn' };
+const PILL = { allow: 'ok', deny: 'fail', partial: 'warn', unknown: 'unknown', blocked: 'warn', rejected: 'fail' };
 const keyOf = (a) => `${a.ns}/${a.kind}/${a.name}`;
 const tip = $('#tip');
 const showTip = (ev, html) => { tip.hidden = false; tip.style.left = ev.clientX + 14 + 'px'; tip.style.top = ev.clientY + 14 + 'px'; tip.innerHTML = html; };
@@ -440,7 +442,7 @@ function visiblePolicies() {
 }
 function renderPolicies() {
   const cov = state.coverage; const vis = visiblePolicies();
-  const unprotected = cov.unprotected.length;
+  const unprotected = cov.unprotected.length; const rejected = state.policies.filter((p) => p.rejected);
   $('#pChips').innerHTML = `
     <span class="pill"><b>${state.policies.length}</b> policies</span>
     <span class="pill accent"><b>${cov.isolatedIngress}</b> workloads ingress-isolated</span>
@@ -448,8 +450,13 @@ function renderPolicies() {
     <span class="pill ${unprotected ? 'warn' : 'ok'} click" id="pUnprot" title="click to list"><b>${unprotected}</b> of ${cov.workloads} workloads touched by no policy (default-allow)</span>
     ${state.denies && !state.denies.loading ? `<span class="pill fail"><b>${state.denies.edges.length}</b> denied workload pairs${showing().has('deny') ? '' : ' (hidden: tick “denied”)'}</span>` : ''}
     ${state.findings.length ? `<span class="pill ${state.findings.some((f) => f.Severity !== 'info') ? 'warn' : ''} click" id="pLint" title="click to list"><b>${state.findings.length}</b> lint finding${state.findings.length === 1 ? '' : 's'}</span>` : ''}
+    ${rejected.length ? `<span class="pill fail click" id="pRejected" title="click to list"><b>${rejected.length}</b> polic${rejected.length === 1 ? 'y' : 'ies'} rejected by Cilium, not enforced</span>` : ''}
     ${vis.length !== state.policies.length ? `<span class="pill">${vis.length} shown</span>` : ''}
     ${pNs.value ? `<span class="pill accent">namespace ${esc(pNs.value)} and its peers</span>` : ''}`;
+  $('#pRejected')?.addEventListener('click', () => {
+    $('#pDetail').innerHTML = `<h3>Rejected by Cilium — not enforced</h3>${rejected.map((p) => `<div class="finding error"><span class="mono"><a href="#" data-p="${esc(p.key)}">${esc(p.key)}</a></span><div>${esc(p.rejected)}</div></div>`).join('')}`;
+    $('#pDetail').querySelectorAll('[data-p]').forEach((a) => a.addEventListener('click', (ev) => { ev.preventDefault(); selectPolicy(a.dataset.p); }));
+  });
   $('#pLint')?.addEventListener('click', () => {
     $('#pDetail').innerHTML = `<h3>Lint findings</h3>${findingsHTML(state.findings)}`;
   });
@@ -486,14 +493,16 @@ function buildPolicyGraph(policies) {
   const portOK = (ports) => !want || ports.some((p) => { const [v] = p.split('/'); if (v === 'any') return true; const [lo, hi] = v.split('-').map(Number); return isNaN(lo) || (hi ? want >= lo && want <= hi : want === lo); });
   const addEdge = (a, b, p, rule, dir) => {
     if (!a || !b || !portOK(rule.ports)) return;
-    const k = `${a.key}|${b.key}|${rule.deny ? 'deny' : 'allow'}`;
-    if (!edges.has(k)) edges.set(k, { a: a.key, b: b.key, status: rule.deny ? 'deny' : 'allow', lines: [] });
-    edges.get(k).lines.push(`${p.kind === 'NetworkPolicy' ? 'NP' : p.kind === 'CiliumNetworkPolicy' ? 'CNP' : 'CCNP'} ${p.namespace ? p.namespace + '/' : ''}${p.name} · ${dir} · ${rule.ports.join(', ')}${rule.l7 ? ' · L7' : ''}`);
+    const status = p.rejected ? 'rejected' : rule.deny ? 'deny' : 'allow';
+    const k = `${a.key}|${b.key}|${status}`;
+    if (!edges.has(k)) edges.set(k, { a: a.key, b: b.key, status, lines: [] });
+    edges.get(k).lines.push(`${p.kind === 'NetworkPolicy' ? 'NP' : p.kind === 'CiliumNetworkPolicy' ? 'CNP' : 'CCNP'} ${p.namespace ? p.namespace + '/' : ''}${p.name} · ${dir} · ${rule.ports.join(', ')}${rule.l7 ? ' · L7' : ''}${p.rejected ? ' · NOT ENFORCED, rejected by Cilium' : ''}`);
   };
   policies.forEach((p) => {
-    if (p.rejected) return; // Cilium does not enforce it: it opens and isolates nothing
+    // A policy Cilium rejected is drawn in grey as intent only: it opens and
+    // isolates nothing.
     const sel = p.selected.map(ensure);
-    sel.forEach((n) => { n.touched = true; n.I = n.I || p.isolatesIngress; n.E = n.E || p.isolatesEgress; });
+    sel.forEach((n) => { n.touched = n.touched || !p.rejected; n.I = n.I || p.isolatesIngress; n.E = n.E || p.isolatesEgress; });
     p.ingress.forEach((rule) => rule.peers.forEach((peer) => {
       const srcs = peer.type === 'pods' || peer.type === 'namespace' ? (peer.matches || []).map(ensure) : [extNode(extIn, peer, 'in:')];
       srcs.forEach((s) => sel.forEach((t) => addEdge(s, t, p, rule, 'ingress')));
@@ -608,8 +617,8 @@ function edgeStubs(a, b, status) {
   const sx = dir > 0 ? a.cx + a.cw : a.cx, tx = a.col === b.col ? b.cx + b.cw : dir > 0 ? b.cx : b.cx + b.cw;
   return `<rect class="stub ${status}" x="${sx - 3}" y="${mid(a) - 7}" width="6" height="14"/><rect class="stub ${status}" x="${tx - 3}" y="${mid(b) - 7}" width="6" height="14"/>`;
 }
-const edgeColor = (s) => s === 'allow' ? 'var(--edge-allow)' : s === 'deny' ? 'var(--edge-deny)' : 'var(--edge-warn)';
-const markers = ['allow', 'deny', 'partial', 'unknown', 'blocked'].map((s) => `<marker id="arr-${s}" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L12,6 L0,12 z" fill="${edgeColor(s)}"/></marker>`).join('')
+const edgeColor = (s) => s === 'allow' ? 'var(--edge-allow)' : s === 'deny' ? 'var(--edge-deny)' : s === 'rejected' ? 'var(--skip)' : 'var(--edge-warn)';
+const markers = ['allow', 'deny', 'partial', 'unknown', 'blocked', 'rejected'].map((s) => `<marker id="arr-${s}" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L12,6 L0,12 z" fill="${edgeColor(s)}"/></marker>`).join('')
   + '<filter id="cardShadow" x="-15%" y="-15%" width="130%" height="140%"><feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#0b1a33" flood-opacity=".28"/></filter>';
 const cardIcon = (c) => c.ext ? 'ico-globe' : c.title === 'kube-system' ? 'ico-cluster' : 'ico-ns';
 function columnSvg(c) {
@@ -684,7 +693,7 @@ function renderPolicyMap(policies) {
   enableColumnDrag(map, 'pmap', columns, () => renderPolicyMap(policies));
   map.querySelectorAll('.edge').forEach((p) => {
     const e = g.edges[+p.dataset.i];
-    const label = { allow: 'ALLOWED BY A RULE', deny: 'DENIED', blocked: 'RULE EXISTS, STILL DENIED', partial: 'PARTIAL', unknown: 'UNKNOWN' }[e.status];
+    const label = { allow: 'ALLOWED BY A RULE', deny: 'DENIED', blocked: 'RULE EXISTS, STILL DENIED', partial: 'PARTIAL', unknown: 'UNKNOWN', rejected: 'NOT ENFORCED' }[e.status];
     p.addEventListener('mousemove', (ev) => showTip(ev, `<div class="t">${esc(e.a.replace(/^(in|out):/, ''))} → ${esc(e.b.replace(/^(in|out):/, ''))}</div><span class="pill ${PILL[e.status]}">${label}</span>${e.lines.map((l) => `<div class="l mono">${esc(l)}</div>`).join('')}`));
     p.addEventListener('mouseleave', hideTip);
     p.addEventListener('click', () => {
@@ -749,15 +758,20 @@ function renderPolicyDetail(p) {
   if (!p) return;
   const d = $('#pDetail');
   const fs = findingsFor(p);
-  const lock = (dir, isolated) => `<span class="pill ${isolated ? 'fail' : 'ok'}">${dir}: ${isolated ? 'default deny' : 'default allow'}</span>`;
+  const lock = (dir, isolated) => `<span class="pill ${isolated ? 'fail' : 'ok'}">${dir}: ${isolated ? 'default deny' : 'default allow'}${p.rejected ? ' (not enforced)' : ''}</span>`;
+  // A rejected policy isolates nothing, but its rules are still worth
+  // reading: they are what will apply once Cilium accepts it.
+  const rules = (dir, list, side) => (p.isolatesIngress && dir === 'ingress') || (p.isolatesEgress && dir === 'egress') || (p.rejected && list.length)
+    ? (list.length ? list.map((r, i) => ruleCard(r, i, side, p.namespace)).join('') : denyAll(dir))
+    : `<div class="note">this policy does not restrict ${dir}</div>`;
   const denyAll = (dir) => `<div class="ecard deny" data-side="${dir === 'ingress' ? 'in' : 'out'}"><div class="rhdr"><svg class="ico"><use href="#ico-globe"/></svg>Nothing<span class="sp"></span><span class="badge deny">DENY ALL</span></div><div class="note">${dir} is isolated and no rule allows anything</div></div>`;
   d.innerHTML = `<svg class="connectors"></svg>${p.rejected ? `<div class="error" style="margin-bottom:14px"><b>Not enforced.</b> Cilium rejected this policy (status Valid=False): ${esc(p.rejected)}. It takes no part in any verdict until it is fixed.</div>` : ''}${fs.length ? `<div style="margin-bottom:14px">${findingsHTML(fs)}</div>` : ''}<div class="cols">
-    <div class="col"><h4><span>Ingress · allowed sources</span></h4>${p.isolatesIngress ? (p.ingress.length ? p.ingress.map((r, i) => ruleCard(r, i, 'in', p.namespace)).join('') : denyAll('ingress')) : '<div class="note">this policy does not restrict ingress</div>'}</div>
+    <div class="col"><h4><span>Ingress · allowed sources</span></h4>${rules('ingress', p.ingress, 'in')}</div>
     <div class="col"><h4><span>Selected workloads</span></h4>
       <div class="center" id="pCenter"><div class="rhdr"><svg class="ico"><use href="#${p.kind === 'CiliumClusterwideNetworkPolicy' ? 'ico-cluster' : 'ico-ns'}"/></svg>${esc((p.namespace ? p.namespace + '/' : '') + p.name)}</div><div class="sel">${esc(p.kind)} · selects ${esc(p.selector)}${p.kind === 'CiliumClusterwideNetworkPolicy' ? ' (cluster-wide)' : ''}</div>
       <div class="locks">${lock('Ingress', p.isolatesIngress)}${lock('Egress', p.isolatesEgress)}</div>
       ${p.selected.length ? p.selected.slice(0, 12).map((w) => `<div class="prow"><span>${esc(w.kind)}/${esc(w.name)}</span><span class="pb">${w.pods} pod${w.pods === 1 ? '' : 's'}</span></div>`).join('') + (p.selected.length > 12 ? `<div class="note">+${p.selected.length - 12} more</div>` : '') : '<div class="note">selects no running workload (stale selector?)</div>'}</div></div>
-    <div class="col"><h4><span>Egress · allowed destinations</span></h4>${p.isolatesEgress ? (p.egress.length ? p.egress.map((r, i) => ruleCard(r, i, 'out', p.namespace)).join('') : denyAll('egress')) : '<div class="note">this policy does not restrict egress</div>'}</div>
+    <div class="col"><h4><span>Egress · allowed destinations</span></h4>${rules('egress', p.egress, 'out')}</div>
   </div>`;
   requestAnimationFrame(() => drawConnectors(d));
 }
@@ -818,7 +832,7 @@ function renderTrace(r) {
 const axisOf = (key) => { const [ns, kind, ...name] = key.split('/'); return { ns, kind, name: name.join('/') }; };
 const isWorkloadKey = (key) => !/^(in|out):/.test(key);
 function renderPolicyFlows(edges) {
-  const label = { allow: 'ALLOWED', deny: 'DENIED', blocked: 'RULE EXISTS, STILL DENIED', partial: 'PARTIAL', unknown: 'UNKNOWN' };
+  const label = { allow: 'ALLOWED', deny: 'DENIED', blocked: 'RULE EXISTS, STILL DENIED', partial: 'PARTIAL', unknown: 'UNKNOWN', rejected: 'NOT ENFORCED' };
   const focus = state.pFocus;
   const rows = edges.map((e, i) => ({ e, i })).filter(({ e }) => !focus || e.a === focus || e.b === focus);
   $('#pflowsSummary').textContent = `Connections drawn (${rows.length}${focus ? ', focused on ' + focus : ''})`;

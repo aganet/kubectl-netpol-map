@@ -6,8 +6,10 @@ import (
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
 )
 
 // ciliumVerdict captures what Cilium policies imply for one edge, kept
@@ -64,7 +66,7 @@ func evaluateCilium(
 
 	// Pass 1: explicit denies always win.
 	for _, p := range applicable {
-		if selectsForCilium(p, src) {
+		if selectsForCilium(ctx, p, src) {
 			if matched, skipped := ruleMatchesEgress(ctx, p, src, dst, port, "egressDeny"); matched {
 				v.Denied = true
 				v.HasPolicy = true
@@ -73,8 +75,8 @@ func evaluateCilium(
 				return v
 			}
 		}
-		if selectsForCilium(p, dst) {
-			if matched, skipped := ruleMatchesIngress(p, src, dst, port, "ingressDeny"); matched {
+		if selectsForCilium(ctx, p, dst) {
+			if matched, skipped := ruleMatchesIngress(ctx, p, src, dst, port, "ingressDeny"); matched {
 				v.Denied = true
 				v.HasPolicy = true
 				v.Reason = fmt.Sprintf("ingress denied by %s (ingressDeny)", ciliumPolicyKey(p))
@@ -95,7 +97,7 @@ func evaluateCilium(
 	portSet := map[string]bool{}
 
 	for _, p := range applicable {
-		if selectsForCilium(p, src) && policyHasSection(p, "egress") {
+		if selectsForCilium(ctx, p, src) && policyHasSection(p, "egress") {
 			srcIsolated = true
 			v.HasPolicy = true
 			matched, ports, skipped, l7 := ruleMatchesEgressWithPorts(ctx, p, src, dst, port, "egress")
@@ -111,10 +113,10 @@ func evaluateCilium(
 				}
 			}
 		}
-		if selectsForCilium(p, dst) && policyHasSection(p, "ingress") {
+		if selectsForCilium(ctx, p, dst) && policyHasSection(p, "ingress") {
 			dstIsolated = true
 			v.HasPolicy = true
-			matched, ports, skipped, l7 := ruleMatchesIngressWithPorts(p, src, dst, port, "ingress")
+			matched, ports, skipped, l7 := ruleMatchesIngressWithPorts(ctx, p, src, dst, port, "ingress")
 			v.Skipped += skipped
 			if matched {
 				dstAllowed = true
@@ -162,9 +164,10 @@ func evaluateCilium(
 }
 
 // selectsForCilium reports whether the policy's endpointSelector matches the
-// given pod. Cluster-wide policies (CCNP) consider every namespace; namespaced
-// policies (CNP) only their own.
-func selectsForCilium(p unstructured.Unstructured, pod corev1.Pod) bool {
+// pod. A CiliumNetworkPolicy's endpointSelector always applies to its own
+// namespace only; a cluster-wide policy considers every namespace. A policy
+// with a nodeSelector instead is a host policy and selects no pod.
+func selectsForCilium(ctx evalContext, p unstructured.Unstructured, pod corev1.Pod) bool {
 	if p.GetKind() == "CiliumNetworkPolicy" && p.GetNamespace() != pod.Namespace {
 		return false
 	}
@@ -172,13 +175,101 @@ func selectsForCilium(p unstructured.Unstructured, pod corev1.Pod) bool {
 	if !found {
 		return false
 	}
-	ml, _, _ := unstructured.NestedMap(sel, "matchLabels")
-	if len(ml) == 0 {
-		return true // empty selector matches all endpoints
+	s, _, ok := ciliumSelector(sel)
+	return ok && s.Matches(ciliumLabels(pod, ctx.nsLabels[pod.Namespace]))
+}
+
+const (
+	ciliumNamespaceKey          = "io.kubernetes.pod.namespace"
+	ciliumNamespaceLabelsPrefix = "io.cilium.k8s.namespace.labels."
+)
+
+// ciliumLabels is the label set Cilium matches selectors against for a pod:
+// its own labels plus the namespace, the namespace's labels and the service
+// account, as Cilium derives them. Source prefixes ("k8s:") are absent here
+// and stripped from the selector side instead.
+func ciliumLabels(pod corev1.Pod, nsLabels map[string]string) labels.Set {
+	set := labels.Set{}
+	for k, v := range pod.Labels {
+		set[k] = v
 	}
-	mlStr := stripCiliumLabelPrefixes(normalizeStringMap(ml))
-	s := labels.SelectorFromSet(labels.Set(mlStr))
-	return s.Matches(labels.Set(pod.Labels))
+	set[ciliumNamespaceKey] = pod.Namespace
+	if sa := pod.Spec.ServiceAccountName; sa != "" {
+		set["io.cilium.k8s.policy.serviceaccount"] = sa
+	}
+	for k, v := range nsLabels {
+		set[ciliumNamespaceLabelsPrefix+k] = v
+	}
+	return set
+}
+
+// parseCiliumSelector reads an endpoint selector (matchLabels and
+// matchExpressions) with its keys normalised to the plain pod label keys.
+func parseCiliumSelector(sel map[string]interface{}) (*metav1.LabelSelector, error) {
+	var ls metav1.LabelSelector
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(sel, &ls); err != nil {
+		return nil, err
+	}
+	ml := make(map[string]string, len(ls.MatchLabels))
+	for k, v := range ls.MatchLabels {
+		ml[stripCiliumPrefix(k)] = v
+	}
+	ls.MatchLabels = ml
+	for i := range ls.MatchExpressions {
+		ls.MatchExpressions[i].Key = stripCiliumPrefix(ls.MatchExpressions[i].Key)
+	}
+	return &ls, nil
+}
+
+// ciliumSelector compiles an endpoint selector. namespaced reports whether
+// it constrains the namespace itself (by name or namespace labels), which
+// switches off the implicit same-namespace match of a CiliumNetworkPolicy
+// peer. ok is false for a malformed selector, which then matches nothing.
+func ciliumSelector(sel map[string]interface{}) (s labels.Selector, namespaced bool, ok bool) {
+	ls, err := parseCiliumSelector(sel)
+	if err != nil {
+		return nil, false, false
+	}
+	for k := range ls.MatchLabels {
+		namespaced = namespaced || namesNamespace(k)
+	}
+	for _, e := range ls.MatchExpressions {
+		namespaced = namespaced || namesNamespace(e.Key)
+	}
+	s, err = metav1.LabelSelectorAsSelector(ls)
+	if err != nil {
+		return nil, false, false
+	}
+	return s, namespaced, true
+}
+
+func namesNamespace(key string) bool {
+	return key == ciliumNamespaceKey || strings.HasPrefix(key, ciliumNamespaceLabelsPrefix)
+}
+
+// ciliumSelectorText renders a selector as "k=v,k2 in (a,b)" for display.
+func ciliumSelectorText(sel map[string]interface{}) string {
+	ls, err := parseCiliumSelector(sel)
+	if err != nil {
+		return "<error>"
+	}
+	return metav1.FormatLabelSelector(ls)
+}
+
+// stripCiliumPrefix drops the label source ("k8s:", "any:") so a selector
+// key compares with the plain pod label. A "reserved:" label names a Cilium
+// identity (world, host, ...) that no pod carries; it is kept under a key no
+// pod has, so In/Exists never match a pod and NotIn/DoesNotExist always do.
+func stripCiliumPrefix(k string) string {
+	for _, p := range []string{"k8s:", "any:"} {
+		if strings.HasPrefix(k, p) {
+			return k[len(p):]
+		}
+	}
+	if strings.HasPrefix(k, "reserved:") {
+		return "reserved.cilium.io/" + k[len("reserved:"):]
+	}
+	return k
 }
 
 // CiliumRejected reports whether Cilium refused to import the policy
@@ -222,8 +313,8 @@ func policyHasSection(p unstructured.Unstructured, key string) bool {
 
 // ruleMatchesIngress returns true if any rule in spec.<key> permits traffic
 // from src to dst (used for "ingress" and "ingressDeny" variants).
-func ruleMatchesIngress(p unstructured.Unstructured, src, dst corev1.Pod, port int32, key string) (bool, int) {
-	matched, _, skipped, _ := ruleMatchesIngressWithPorts(p, src, dst, port, key)
+func ruleMatchesIngress(ctx evalContext, p unstructured.Unstructured, src, dst corev1.Pod, port int32, key string) (bool, int) {
+	matched, _, skipped, _ := ruleMatchesIngressWithPorts(ctx, p, src, dst, port, key)
 	return matched, skipped
 }
 
@@ -267,7 +358,7 @@ func entitiesMatchPods(ents []string) bool {
 func matchEgressPeers(ctx evalContext, rule map[string]interface{}, dst corev1.Pod, policyNS string) peerMatch {
 	var m peerMatch
 	to, _, _ := unstructured.NestedSlice(rule, "toEndpoints")
-	if len(to) > 0 && anyEndpointMatches(to, dst, policyNS) {
+	if len(to) > 0 && anyEndpointMatches(ctx, to, dst, policyNS) {
 		m.matched = true
 	}
 	if entitiesMatchPods(entityTargets(rule)) {
@@ -292,10 +383,10 @@ func matchEgressPeers(ctx evalContext, rule map[string]interface{}, dst corev1.P
 
 // matchIngressPeers is the ingress counterpart: fromCIDR/fromCIDRSet apply
 // only to sources outside the cluster and never match a pod.
-func matchIngressPeers(rule map[string]interface{}, src corev1.Pod, policyNS string) peerMatch {
+func matchIngressPeers(ctx evalContext, rule map[string]interface{}, src corev1.Pod, policyNS string) peerMatch {
 	var m peerMatch
 	from, _, _ := unstructured.NestedSlice(rule, "fromEndpoints")
-	if len(from) > 0 && anyEndpointMatches(from, src, policyNS) {
+	if len(from) > 0 && anyEndpointMatches(ctx, from, src, policyNS) {
 		m.matched = true
 	}
 	if entitiesMatchPods(stringList(rule, "fromEntities")) {
@@ -336,9 +427,11 @@ func matchRules(rules []interface{}, port int32, peers func(map[string]interface
 	return false, nil, skipped, false
 }
 
-func ruleMatchesIngressWithPorts(p unstructured.Unstructured, src, dst corev1.Pod, port int32, key string) (bool, []string, int, bool) {
+func ruleMatchesIngressWithPorts(ctx evalContext, p unstructured.Unstructured, src, dst corev1.Pod, port int32, key string) (bool, []string, int, bool) {
 	rules, _, _ := unstructured.NestedSlice(p.Object, "spec", key)
-	return matchRules(rules, port, func(rule map[string]interface{}) peerMatch { return matchIngressPeers(rule, src, p.GetNamespace()) })
+	return matchRules(rules, port, func(rule map[string]interface{}) peerMatch {
+		return matchIngressPeers(ctx, rule, src, p.GetNamespace())
+	})
 }
 
 func ruleMatchesEgressWithPorts(ctx evalContext, p unstructured.Unstructured, src, dst corev1.Pod, port int32, key string) (bool, []string, int, bool) {
@@ -346,68 +439,24 @@ func ruleMatchesEgressWithPorts(ctx evalContext, p unstructured.Unstructured, sr
 	return matchRules(rules, port, func(rule map[string]interface{}) peerMatch { return matchEgressPeers(ctx, rule, dst, p.GetNamespace()) })
 }
 
-func anyEndpointMatches(peers []interface{}, pod corev1.Pod, policyNS string) bool {
+// anyEndpointMatches reports whether a fromEndpoints/toEndpoints list covers
+// the pod. In a CiliumNetworkPolicy (policyNS set) a peer selector that does
+// not name a namespace is implicitly limited to the policy's own namespace.
+func anyEndpointMatches(ctx evalContext, peers []interface{}, pod corev1.Pod, policyNS string) bool {
 	for _, raw := range peers {
 		m, ok := raw.(map[string]interface{})
 		if !ok {
 			continue
 		}
-		ml, _, _ := unstructured.NestedMap(m, "matchLabels")
-		mlStr := normalizeStringMap(ml)
-		// Cilium uses k8s:io.kubernetes.pod.namespace as a special label.
-		// If absent in the selector, default to the policy's own namespace
-		// (matching CNP convention).
-		nsKey1 := "k8s:io.kubernetes.pod.namespace"
-		nsKey2 := "io.kubernetes.pod.namespace"
-		expectedNS := policyNS
-		if v, ok := mlStr[nsKey1]; ok {
-			expectedNS = v
-			delete(mlStr, nsKey1)
-		} else if v, ok := mlStr[nsKey2]; ok {
-			expectedNS = v
-			delete(mlStr, nsKey2)
-		}
-		if expectedNS != "" && pod.Namespace != expectedNS {
+		s, namespaced, ok := ciliumSelector(m)
+		if !ok || (policyNS != "" && !namespaced && pod.Namespace != policyNS) {
 			continue
 		}
-		// Cilium label keys carry a source prefix ("k8s:", "any:", "reserved:")
-		// that pod labels don't have. Strip it before matching so a selector
-		// `k8s:app.kubernetes.io/name=api` matches a pod label
-		// `app.kubernetes.io/name=api`.
-		s := labels.SelectorFromSet(labels.Set(stripCiliumLabelPrefixes(mlStr)))
-		if s.Matches(labels.Set(pod.Labels)) {
+		if s.Matches(ciliumLabels(pod, ctx.nsLabels[pod.Namespace])) {
 			return true
 		}
 	}
 	return false
-}
-
-// stripCiliumLabelPrefixes normalizes selector keys to plain Kubernetes
-// label keys for matching against pod.Labels. Cilium prefixes label keys
-// with their source ("k8s:", "any:", "reserved:"); only the "k8s:" and
-// "any:" sources correspond to keys that live on pod.Labels. A "reserved:"
-// label (e.g. reserved:world, reserved:host) names a Cilium identity that
-// no Pod object has, so we mark such selectors unmatchable by injecting a
-// sentinel key. Keys without a recognised source prefix pass through.
-func stripCiliumLabelPrefixes(in map[string]string) map[string]string {
-	out := make(map[string]string, len(in))
-	for k, v := range in {
-		switch {
-		case strings.HasPrefix(k, "k8s:"):
-			out[k[len("k8s:"):]] = v
-		case strings.HasPrefix(k, "k8s."):
-			out[k[len("k8s."):]] = v
-		case strings.HasPrefix(k, "any:"):
-			out[k[len("any:"):]] = v
-		case strings.HasPrefix(k, "any."):
-			out[k[len("any."):]] = v
-		case strings.HasPrefix(k, "reserved:"):
-			out["__cilium_reserved_"+k[len("reserved:"):]] = v
-		default:
-			out[k] = v
-		}
-	}
-	return out
 }
 
 // evaluateToPorts inspects rule.toPorts. Returns the matching port strings

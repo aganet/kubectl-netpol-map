@@ -1289,8 +1289,11 @@ func renderPolicy(p policy.PolicyView, findings []lint.Finding, w int) string {
 	}
 	centerBox := sBoxSel.Width(colW).Render(strings.Join(center, "\n"))
 
-	leftBoxes, leftRules := ruleBoxes(p.Ingress, p.IsolatesIngress, "ingress", colW)
-	rightBoxes, rightRules := ruleBoxes(p.Egress, p.IsolatesEgress, "egress", colW)
+	// A rejected policy isolates nothing, but its rules are what will apply
+	// once Cilium accepts it, so they are still drawn.
+	rejected := p.Rejected != ""
+	leftBoxes, leftRules := ruleBoxes(p.Ingress, p.IsolatesIngress || (rejected && len(p.Ingress) > 0), "ingress", colW)
+	rightBoxes, rightRules := ruleBoxes(p.Egress, p.IsolatesEgress || (rejected && len(p.Egress) > 0), "egress", colW)
 	if narrow {
 		out = append(out, sHead.Render("ALLOWED SOURCES"), lipgloss.JoinVertical(lipgloss.Left, leftBoxes...),
 			sOK.Render("   ▼ into"), sHead.Render("SELECTED"), centerBox,
