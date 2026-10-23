@@ -151,7 +151,7 @@ func standardExternalEgress(ctx evalContext, src corev1.Pod, t externalTarget, p
 	matched := []string{}
 	for _, p := range isolating {
 		for _, rule := range p.Spec.Egress {
-			ports := rulePorts(rule.Ports, port, corev1.Pod{})
+			ports, _ := rulePorts(rule.Ports, port, corev1.Pod{}) // a named port never matches a non-pod destination
 			if len(ports) == 0 {
 				continue
 			}

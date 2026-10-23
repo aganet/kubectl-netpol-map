@@ -168,7 +168,7 @@ func collectExternalEgress(ctx evalContext, rows []Axis, resolver Resolver) []Ex
 				continue
 			}
 			for _, rule := range np.Spec.Egress {
-				ports := rulePorts(rule.Ports, 0, corev1.Pod{}) // CIDR peers have no pod to resolve named ports on
+				ports, _ := rulePorts(rule.Ports, 0, corev1.Pod{}) // a named port never matches a CIDR peer
 				for _, peer := range rule.To {
 					if peer.IPBlock == nil {
 						continue

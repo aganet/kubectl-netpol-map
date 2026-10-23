@@ -308,6 +308,9 @@ func dnsLayer(svc *corev1.Service) Layer {
 	case svc.Spec.ClusterIP == corev1.ClusterIPNone:
 		return Layer{Name: "DNS", Status: LayerPass,
 			Summary: fmt.Sprintf("%s → Service %s/%s (headless: resolves to the ready pod IPs)", name, svc.Namespace, svc.Name)}
+	case svc.Spec.ClusterIP == "": // a manifest read offline has no IP yet
+		return Layer{Name: "DNS", Status: LayerPass,
+			Summary: fmt.Sprintf("%s → Service %s/%s (ClusterIP assigned at apply)", name, svc.Namespace, svc.Name)}
 	default:
 		return Layer{Name: "DNS", Status: LayerPass,
 			Summary: fmt.Sprintf("%s → Service %s/%s (ClusterIP %s)", name, svc.Namespace, svc.Name, svc.Spec.ClusterIP)}

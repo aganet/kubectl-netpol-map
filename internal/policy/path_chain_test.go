@@ -244,6 +244,16 @@ func TestNamedPortInPolicyResolves(t *testing.T) {
 	if deny.Cell.Allowed {
 		t.Errorf("port 9000 is not the named port; expected DENY, got %q", deny.Cell.Reason)
 	}
+	// A named port no container declares matches no traffic, even with no
+	// port filter and an unrestricted source.
+	snap.Policies[0].Spec.Ingress[0].Ports[0].Port = &[]intstr.IntOrString{intstr.FromString("metrics")}[0]
+	missing, err := ExplainPath(snap, "", "shop/frontend", "payments/api-1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if missing.Cell.Allowed || !strings.Contains(missing.Cell.Reason, "named port metrics not declared") {
+		t.Errorf("undeclared named port must deny and say so, got %+v", missing.Cell)
+	}
 }
 
 // An egress rule that only opens 80 and an ingress rule that only opens 443

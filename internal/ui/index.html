@@ -417,7 +417,7 @@ async function loadRefs(refresh = false) {
     state.refs = await api('/api/refs' + (refresh ? '?refresh=1' : ''));
     state.loadedAt = Date.now();
     $('#ctx').innerHTML = `context <b>${esc(state.refs.context || '—')}</b>`;
-    $('#stats').textContent = `${state.refs.namespaces.length} namespaces · ${state.refs.podCount} pods · ${state.refs.policyCount} policies${state.refs.meshFetched ? '' : ' · mesh not read'}`;
+    $('#stats').textContent = `${state.refs.namespaces.filter((n) => n.workloads.length).length} namespaces · ${state.refs.podCount} pods · ${state.refs.policyCount} policies${state.refs.meshFetched ? '' : ' · mesh not read'}`;
     const nsOpts = state.refs.namespaces.map((n) => ({ value: n.name, label: n.name, hint: `${n.workloads.length} wl · ${n.services.length} svc` }));
     srcNs.setOptions(nsOpts); dstNs.setOptions(nsOpts);
     pNs.setOptions([{ value: '', label: 'All namespaces' }].concat(nsOpts)); if (!pNs.value) pNs.set('', true);

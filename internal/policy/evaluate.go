@@ -489,12 +489,14 @@ func checkEgress(ctx evalContext, src, dst corev1.Pod, port int32) (bool, []stri
 
 	matched := []string{}
 	allowed := []string{}
+	var unresolved []string
 	for _, p := range isolating {
 		for _, rule := range p.Spec.Egress {
 			if !peersMatch(ctx, rule.To, dst, p.Namespace) {
 				continue
 			}
-			ports := rulePorts(rule.Ports, port, dst)
+			ports, missing := rulePorts(rule.Ports, port, dst)
+			unresolved = append(unresolved, missing...)
 			if len(ports) == 0 {
 				continue
 			}
@@ -503,7 +505,7 @@ func checkEgress(ctx evalContext, src, dst corev1.Pod, port int32) (bool, []stri
 		}
 	}
 	if len(allowed) == 0 {
-		return false, nil, fmt.Sprintf("src isolated for egress by %s; no rule matches dst", policyNames(isolating))
+		return false, nil, fmt.Sprintf("src isolated for egress by %s; no rule matches dst%s", policyNames(isolating), unresolvedNote(unresolved))
 	}
 	return true, allowed, fmt.Sprintf("egress allowed by %s", strings.Join(unique(matched), ", "))
 }
@@ -527,12 +529,14 @@ func checkIngress(ctx evalContext, src, dst corev1.Pod, port int32) (bool, []str
 
 	matched := []string{}
 	allowed := []string{}
+	var unresolved []string
 	for _, p := range isolating {
 		for _, rule := range p.Spec.Ingress {
 			if !peersMatch(ctx, rule.From, src, p.Namespace) {
 				continue
 			}
-			ports := rulePorts(rule.Ports, port, dst)
+			ports, missing := rulePorts(rule.Ports, port, dst)
+			unresolved = append(unresolved, missing...)
 			if len(ports) == 0 {
 				continue
 			}
@@ -541,7 +545,7 @@ func checkIngress(ctx evalContext, src, dst corev1.Pod, port int32) (bool, []str
 		}
 	}
 	if len(allowed) == 0 {
-		return false, nil, fmt.Sprintf("dst isolated for ingress by %s; no rule allows src", policyNames(isolating))
+		return false, nil, fmt.Sprintf("dst isolated for ingress by %s; no rule allows src%s", policyNames(isolating), unresolvedNote(unresolved))
 	}
 	return true, allowed, fmt.Sprintf("ingress allowed by %s", strings.Join(unique(matched), ", "))
 }
@@ -653,11 +657,15 @@ func peersMatch(ctx evalContext, peers []networkingv1.NetworkPolicyPeer, pod cor
 // filter. A named port is resolved against the destination pod's container
 // ports (that is what the spec matches it on, for ingress and egress alike);
 // a name no container declares is kept verbatim so it stays visible.
-func rulePorts(ports []networkingv1.NetworkPolicyPort, filter int32, dst corev1.Pod) []string {
+// rulePorts resolves a rule's ports against the destination pod and keeps
+// those passing the filter ("*" = any). A named port no container of dst
+// declares matches no traffic, as in Kubernetes; its name is returned in
+// unresolved so the verdict can say why the rule did not apply.
+func rulePorts(ports []networkingv1.NetworkPolicyPort, filter int32, dst corev1.Pod) (out, unresolved []string) {
 	if len(ports) == 0 {
-		return []string{"*"}
+		return []string{"*"}, nil
 	}
-	out := []string{}
+	out = []string{}
 	for _, p := range ports {
 		if p.Port == nil {
 			out = append(out, "*")
@@ -667,7 +675,7 @@ func rulePorts(ports []networkingv1.NetworkPolicyPort, filter int32, dst corev1.
 		if p.Port.Type == intstr.String {
 			pv = containerPortByName(dst, p.Port.StrVal)
 			if pv == 0 {
-				out = append(out, p.Port.StrVal)
+				unresolved = append(unresolved, p.Port.StrVal)
 				continue
 			}
 		}
@@ -676,7 +684,15 @@ func rulePorts(ports []networkingv1.NetworkPolicyPort, filter int32, dst corev1.
 		}
 		out = append(out, strconv.Itoa(int(pv)))
 	}
-	return out
+	return out, unresolved
+}
+
+// unresolvedNote explains a rule that matched the peer but none of its ports.
+func unresolvedNote(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" (named port %s not declared by the destination pod)", strings.Join(unique(names), ", "))
 }
 
 // containerPortByName returns the numeric port a pod's containers declare
