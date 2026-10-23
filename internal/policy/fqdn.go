@@ -4,6 +4,7 @@ import (
 	"net"
 	"sort"
 	"strings"
+	"sync"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -19,27 +20,33 @@ type Resolver interface {
 
 // NetResolver resolves via the host's DNS using net.LookupHost. Results are
 // cached for the lifetime of the resolver to avoid repeated lookups across
-// the O(pods²) evaluation loop.
+// the O(pods²) evaluation loop. It is safe for concurrent use: the web UI
+// evaluates several requests at once against one shared snapshot.
 type NetResolver struct {
+	mu    sync.Mutex
 	cache map[string][]string
 }
 
 func NewNetResolver() *NetResolver { return &NetResolver{cache: map[string][]string{}} }
 
 func (r *NetResolver) Resolve(name string) []string {
+	r.mu.Lock()
 	if r.cache == nil {
 		r.cache = map[string][]string{}
 	}
-	if v, ok := r.cache[name]; ok {
+	v, ok := r.cache[name]
+	r.mu.Unlock()
+	if ok {
 		return v
 	}
 	ips, err := net.LookupHost(name)
 	if err != nil {
-		r.cache[name] = nil
-		return nil
+		ips = nil
 	}
 	sort.Strings(ips)
+	r.mu.Lock()
 	r.cache[name] = ips
+	r.mu.Unlock()
 	return ips
 }
 
@@ -224,18 +231,37 @@ func externalOnly(resolved []string, podIPs map[string]string) bool {
 	return true
 }
 
-func cidrTargets(rule map[string]interface{}) []string {
+// fqdnDecidable reports whether a toFQDNs rule can be settled for pods: all
+// its names resolved (so a non-match means the rule points elsewhere) and it
+// carries no wildcard pattern.
+func fqdnDecidable(ctx evalContext, rule map[string]interface{}) bool {
+	names, patterns := fqdnNames(rule)
+	if len(patterns) > 0 || ctx.resolver == nil {
+		return false
+	}
+	for _, n := range names {
+		if len(ctx.resolver.Resolve(normalizeFQDN(n))) == 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func cidrTargets(rule map[string]interface{}) []string { return cidrEntries(rule, "toCIDR", "toCIDRSet") }
+
+// cidrEntries lists the CIDRs of a rule's plain list and set fields; set
+// entries carry their except list as "<cidr> except <a>,<b>", the same form
+// the standard ipBlock report uses.
+func cidrEntries(rule map[string]interface{}, listKey, setKey string) []string {
 	var out []string
-	if v, ok := rule["toCIDR"].([]interface{}); ok {
+	if v, ok := rule[listKey].([]interface{}); ok {
 		for _, c := range v {
 			if s, ok := c.(string); ok {
 				out = append(out, s)
 			}
 		}
 	}
-	// toCIDRSet entries carry their except list as "<cidr> except <a>,<b>",
-	// the same form the standard ipBlock report uses.
-	if v, ok := rule["toCIDRSet"].([]interface{}); ok {
+	if v, ok := rule[setKey].([]interface{}); ok {
 		for _, c := range v {
 			m, ok := c.(map[string]interface{})
 			if !ok {

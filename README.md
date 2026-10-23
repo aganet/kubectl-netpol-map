@@ -104,10 +104,22 @@ engines, on a shared port; workloads aggregate to `ALLOW`, `DENY`, `PARTIAL`.
 Anything that depends on a rule the engine can't evaluate (Cilium L7,
 unresolved FQDN, CIDR, entity) is `UNKNOWN`, never a false `DENY`.
 
-Not evaluated: Cilium `matchExpressions`, `toRequires`, `toServices`,
-`toNodes`, ICMP, host policies, `endPort` ranges, protocols;
-`AdminNetworkPolicy`; Calico and Antrea policies. `path` is static: it reads
-objects, sends no packets, assumes CoreDNS in `kube-system` and outbound NAT.
+**Cilium rules, pod-to-pod.** `toEndpoints`/`fromEndpoints` (`matchLabels`
+only), `toEntities`/`fromEntities` (`cluster` and `all` match pods; `world`,
+`host`, `remote-node`, `kube-apiserver` and the others do not), and
+`toFQDNs` (a pod matches only if a name resolves to its IP; names that all
+resolve elsewhere are a decided non-match; unresolved names and wildcard
+patterns are UNKNOWN) are evaluated. `toCIDR`/`fromCIDR` apply only outside
+the cluster in Cilium and never match a pod. L7 (HTTP/DNS) conditions are not
+evaluated: a rule whose L4 part matches is shown as `ALLOW (L7)`. Selector
+lists within one rule allow independently; `toRequires`/`fromRequires` and
+`toServices` are not evaluated and make the verdict UNKNOWN.
+
+Not evaluated: Cilium `matchExpressions`, `toNodes`, ICMP, host policies,
+`endPort` ranges, protocols; `AdminNetworkPolicy`; Calico and Antrea
+policies. `path` is static: it reads objects, sends no packets, assumes
+CoreDNS in `kube-system` and outbound NAT. FQDN resolution uses the DNS of
+the machine running the tool, which can differ from the cluster's.
 
 ## Safety
 

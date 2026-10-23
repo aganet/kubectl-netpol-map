@@ -198,87 +198,118 @@ func ruleMatchesEgress(ctx evalContext, p unstructured.Unstructured, src, dst co
 	return matched, skipped
 }
 
-func ruleMatchesIngressWithPorts(p unstructured.Unstructured, src, dst corev1.Pod, port int32, key string) (matched bool, ports []string, skipped int, l7 bool) {
-	rules, _, _ := unstructured.NestedSlice(p.Object, "spec", key)
+// peerMatch is the outcome of matching one rule's peer selectors against a
+// pod. A rule counts as skipped (and the verdict as UNKNOWN) only when it
+// cannot be decided for pod-to-pod traffic: an unresolved or wildcard FQDN,
+// or a toServices/fromRequires/toRequires clause. Everything else is a
+// plain yes or no.
+type peerMatch struct {
+	matched   bool
+	undecided bool
+}
+
+// entitiesMatchPods reports whether an entity list can match in-cluster
+// pods. Per Cilium's entity definitions "all" and "cluster" cover every
+// endpoint in the cluster; world, host, remote-node, kube-apiserver, ingress,
+// init, health and unmanaged name things that are not pods.
+func entitiesMatchPods(ents []string) bool {
+	for _, e := range ents {
+		if e == "all" || e == "cluster" {
+			return true
+		}
+	}
+	return false
+}
+
+// matchEgressPeers decides whether an egress rule's to* selectors cover dst,
+// following Cilium semantics for pod-to-pod traffic:
+//   - the selector lists of one rule each allow independently;
+//   - toCIDR/toCIDRSet apply only to destinations outside the cluster, so
+//     they never match a pod, whatever its IP;
+//   - toFQDNs matches a pod only if a name resolves to that pod's IP; names
+//     that all resolve elsewhere are a decided non-match, unresolved names
+//     or wildcard patterns are undecided;
+//   - toServices and toRequires are not evaluated.
+func matchEgressPeers(ctx evalContext, rule map[string]interface{}, dst corev1.Pod, policyNS string) peerMatch {
+	var m peerMatch
+	to, _, _ := unstructured.NestedSlice(rule, "toEndpoints")
+	if len(to) > 0 && anyEndpointMatches(to, dst, policyNS) {
+		m.matched = true
+	}
+	if entitiesMatchPods(entityTargets(rule)) {
+		m.matched = true
+	}
+	if _, has := rule["toFQDNs"]; has {
+		switch {
+		case fqdnRuleMatchesPod(ctx, rule, dst):
+			m.matched = true
+		case !fqdnDecidable(ctx, rule):
+			m.undecided = true
+		}
+	}
+	if hasFields(rule, "toServices", "toRequires") {
+		m.undecided = true
+	}
+	if !hasFields(rule, "toEndpoints", "toEntities", "toFQDNs", "toCIDR", "toCIDRSet", "toServices", "toRequires") {
+		m.matched = true // no selector at all: every destination
+	}
+	return m
+}
+
+// matchIngressPeers is the ingress counterpart: fromCIDR/fromCIDRSet apply
+// only to sources outside the cluster and never match a pod.
+func matchIngressPeers(rule map[string]interface{}, src corev1.Pod, policyNS string) peerMatch {
+	var m peerMatch
+	from, _, _ := unstructured.NestedSlice(rule, "fromEndpoints")
+	if len(from) > 0 && anyEndpointMatches(from, src, policyNS) {
+		m.matched = true
+	}
+	if entitiesMatchPods(stringList(rule, "fromEntities")) {
+		m.matched = true
+	}
+	if hasFields(rule, "fromRequires") {
+		m.undecided = true
+	}
+	if !hasFields(rule, "fromEndpoints", "fromEntities", "fromCIDR", "fromCIDRSet", "fromRequires") {
+		m.matched = true
+	}
+	return m
+}
+
+// matchRules walks spec.<key> and returns the first rule whose peers and
+// ports cover the pair. L7 conditions on a matching rule are reported, not
+// evaluated; rules that could not be decided are counted in skipped.
+func matchRules(rules []interface{}, port int32, peers func(map[string]interface{}) peerMatch) (matched bool, ports []string, skipped int, l7 bool) {
 	for _, r := range rules {
-		ruleMap, ok := r.(map[string]interface{})
+		rule, ok := r.(map[string]interface{})
 		if !ok {
 			continue
 		}
-		from, _, _ := unstructured.NestedSlice(ruleMap, "fromEndpoints")
-		_, hasL7 := ruleHasL7(ruleMap)
-		if hasL7 {
-			skipped++
-		}
-		hasUnsupported := hasFields(ruleMap, "fromFQDNs", "fromEntities", "fromCIDR", "fromCIDRSet", "fromRequires", "fromServices")
-		if hasUnsupported {
-			skipped++
+		m := peers(rule)
+		if !m.matched {
+			if m.undecided {
+				skipped++
+			}
 			continue
 		}
-		// Match peer.
-		if len(from) == 0 {
-			// No fromEndpoints = match all sources (Cilium semantics)
-		} else if !anyEndpointMatches(from, src, p.GetNamespace()) {
-			continue
-		}
-		rulePorts, portsMatch, skippedPorts := evaluateToPorts(ruleMap, port)
-		skipped += skippedPorts
+		rulePorts, portsMatch, skippedPorts := evaluateToPorts(rule, port)
 		if !portsMatch {
 			continue
 		}
-		// Matched at L4; report whether this rule also carried L7 conditions.
-		return true, rulePorts, skipped, hasL7
+		_, hasL7 := ruleHasL7(rule)
+		return true, rulePorts, skipped + skippedPorts, hasL7
 	}
 	return false, nil, skipped, false
 }
 
-func ruleMatchesEgressWithPorts(ctx evalContext, p unstructured.Unstructured, src, dst corev1.Pod, port int32, key string) (matched bool, ports []string, skipped int, l7 bool) {
+func ruleMatchesIngressWithPorts(p unstructured.Unstructured, src, dst corev1.Pod, port int32, key string) (bool, []string, int, bool) {
 	rules, _, _ := unstructured.NestedSlice(p.Object, "spec", key)
-	for _, r := range rules {
-		ruleMap, ok := r.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		to, _, _ := unstructured.NestedSlice(ruleMap, "toEndpoints")
-		_, hasL7 := ruleHasL7(ruleMap)
-		if hasL7 {
-			skipped++
-		}
+	return matchRules(rules, port, func(rule map[string]interface{}) peerMatch { return matchIngressPeers(rule, src, p.GetNamespace()) })
+}
 
-		// toFQDNs: resolve names and see if the destination pod's IP is one of
-		// them. If so the rule matches as a real edge; if the FQDN resolves
-		// only to external IPs (or can't be resolved), treat it as a skipped
-		// rule so the verdict stays UNKNOWN rather than a false DENY.
-		if _, hasFQDN := ruleMap["toFQDNs"]; hasFQDN {
-			if fqdnRuleMatchesPod(ctx, ruleMap, dst) {
-				rulePorts, portsMatch, skippedPorts := evaluateToPorts(ruleMap, port)
-				skipped += skippedPorts
-				if portsMatch {
-					return true, rulePorts, skipped, hasL7
-				}
-			}
-			skipped++
-			continue
-		}
-
-		hasUnsupported := hasFields(ruleMap, "toEntities", "toCIDR", "toCIDRSet", "toRequires", "toServices")
-		if hasUnsupported {
-			skipped++
-			continue
-		}
-		if len(to) == 0 {
-			// no toEndpoints = match all destinations
-		} else if !anyEndpointMatches(to, dst, p.GetNamespace()) {
-			continue
-		}
-		rulePorts, portsMatch, skippedPorts := evaluateToPorts(ruleMap, port)
-		skipped += skippedPorts
-		if !portsMatch {
-			continue
-		}
-		return true, rulePorts, skipped, hasL7
-	}
-	return false, nil, skipped, false
+func ruleMatchesEgressWithPorts(ctx evalContext, p unstructured.Unstructured, src, dst corev1.Pod, port int32, key string) (bool, []string, int, bool) {
+	rules, _, _ := unstructured.NestedSlice(p.Object, "spec", key)
+	return matchRules(rules, port, func(rule map[string]interface{}) peerMatch { return matchEgressPeers(ctx, rule, dst, p.GetNamespace()) })
 }
 
 func anyEndpointMatches(peers []interface{}, pod corev1.Pod, policyNS string) bool {
