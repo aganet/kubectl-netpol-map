@@ -1521,7 +1521,7 @@ func (m Model) renderHelp() string {
 	for _, r := range rows {
 		lines = append(lines, sAccent.Render(fmt.Sprintf("%-16s", r[0]))+r[1])
 	}
-	lines = append(lines, "", sMuted.Render("any key closes this"))
+	lines = append(lines, "", sMuted.Render("netpol-map "+m.version+" · github.com/aganet/kubectl-netpol-map"), sMuted.Render("any key closes this"))
 	return sModal.Render(strings.Join(lines, "\n"))
 }
 

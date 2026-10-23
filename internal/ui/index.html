@@ -38,7 +38,8 @@
   .tab.active { color: var(--text); border-bottom-color: var(--accent); }
   .spacer { flex: 1; }
   .pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--border); font-size: 12px; color: var(--muted); white-space: nowrap; }
-  .version { position: fixed; right: 12px; bottom: 8px; font-size: 11px; color: var(--muted); background: var(--panel); padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border); }
+  .version { position: fixed; right: 12px; bottom: 8px; font-size: 11px; color: var(--muted); background: var(--panel); padding: 2px 8px; border-radius: 6px; border: 1px solid var(--border); text-decoration: none; }
+  .version:hover { color: var(--accent); border-color: var(--accent); }
   .pill b { color: var(--text); font-weight: 600; }
   .pill.ok { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
   .pill.warn, .pill.unknown { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
@@ -281,7 +282,7 @@
 
 </main>
 <div class="tip" id="tip" hidden></div>
-<span class="version" id="version"></span>
+<a class="version" id="version" href="https://github.com/aganet/kubectl-netpol-map" target="_blank" rel="noopener" title="kubectl-netpol-map on GitHub"></a>
 
 <script>
 const $ = (s) => document.querySelector(s);
@@ -419,7 +420,7 @@ async function loadRefs(refresh = false) {
     state.refs = await api('/api/refs' + (refresh ? '?refresh=1' : ''));
     state.loadedAt = Date.now();
     $('#ctx').innerHTML = `context <b>${esc(state.refs.context || '—')}</b>`;
-    $('#version').textContent = `netpol-map ${state.refs.version || ''}`;
+    $('#version').textContent = `netpol-map ${state.refs.version || ''} · github.com/aganet`;
     $('#stats').textContent = `${state.refs.namespaces.filter((n) => n.workloads.length).length} namespaces · ${state.refs.podCount} pods · ${state.refs.policyCount} policies${state.refs.meshFetched ? '' : ' · mesh not read'}`;
     const un = state.refs.unevaluated || []; $('#unevaluated').hidden = !un.length; $('#unevaluated').textContent = `Not evaluated, verdicts may be wrong: ${un.join(', ')}`;
     const nsOpts = state.refs.namespaces.map((n) => ({ value: n.name, label: n.name, hint: `${n.workloads.length} wl · ${n.services.length} svc` }));
