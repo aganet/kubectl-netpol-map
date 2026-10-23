@@ -230,12 +230,7 @@ func buildAxes(pods []corev1.Pod, replicaSets []appsv1.ReplicaSet, mode GroupBy)
 		ws := groupPodsByWorkload(pods, replicaSets)
 		out := make([]Axis, 0, len(ws))
 		for _, w := range ws {
-			out = append(out, Axis{
-				Namespace: w.Namespace,
-				Kind:      w.Kind,
-				Name:      w.Name,
-				Pods:      w.Pods,
-			})
+			out = append(out, Axis(w))
 		}
 		return out
 	}

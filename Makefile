@@ -5,7 +5,7 @@ build:
 	go build -o bin/kubectl-netpol_map ./cmd/kubectl-netpol_map
 
 test:
-	gofmt -l . && go vet ./... && go test ./...
+	test -z "$$(gofmt -l .)" && go vet ./... && go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 ./... && go test -race ./...
 
 install:
 	go install ./cmd/kubectl-netpol_map

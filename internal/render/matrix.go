@@ -548,27 +548,6 @@ func isBoring(c policy.Cell) bool {
 	return c.Allowed && !c.Partial && !c.PolicyApplied
 }
 
-// hasActionableCells reports whether any non-self cell in the rows×cols
-// sub-matrix is something other than default-allow.
-func hasActionableCells(m *policy.Matrix, rows, cols []policy.Axis) bool {
-	rowIdx := indexBy(m.Rows)
-	colIdx := indexBy(m.Cols)
-	for _, src := range rows {
-		si := rowIdx[src.Display()]
-		for _, dst := range cols {
-			dj := colIdx[dst.Display()]
-			cell := m.Cells[si][dj]
-			if cell.IsSelf {
-				continue
-			}
-			if !isBoring(cell) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // hasDenyOrPartial returns true when at least one non-self cell is a DENY
 // or PARTIAL — used to skip sub-matrices entirely in --denies-only mode.
 func hasDenyOrPartial(m *policy.Matrix, rows, cols []policy.Axis) bool {
