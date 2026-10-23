@@ -86,6 +86,7 @@ type picker struct {
 type Model struct {
 	fetch   func(context.Context) (*policy.Snapshot, error)
 	ctxName string
+	version string
 
 	d       *data
 	err     error
@@ -115,12 +116,12 @@ type Model struct {
 }
 
 // New builds the model; fetch produces a cluster-wide snapshot.
-func New(fetch func(context.Context) (*policy.Snapshot, error), ctxName string) Model {
+func New(fetch func(context.Context) (*policy.Snapshot, error), ctxName, version string) Model {
 	f := textinput.New()
 	f.Prompt = "/ "
 	f.Placeholder = "filter"
 	sp := spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(sAccent))
-	return Model{fetch: fetch, ctxName: ctxName, filter: f, spin: sp, loading: true, pane: paneList}
+	return Model{fetch: fetch, ctxName: ctxName, version: version, filter: f, spin: sp, loading: true, pane: paneList}
 }
 
 // Run starts the app in the alternate screen with mouse support.
@@ -833,6 +834,9 @@ func (m Model) renderHeader() string {
 			k("isolated")+sAccent.Render(fmt.Sprintf("%d/%d ingress · %d/%d egress", c.IsolatedIngress, c.Workloads, c.IsolatedEgress, c.Workloads)),
 			k("untouched")+sWarn.Render(fmt.Sprintf("%d workloads with no policy (all traffic allowed)", len(c.Unprotected))),
 			k("refreshed")+m.d.at.Format("15:04:05"))
+		if len(m.d.snap.Unevaluated) > 0 { // the header has a fixed height, so this rides on the cluster line
+			lines[len(lines)-4] += "   " + sFail.Render("not evaluated, verdicts may be wrong: "+strings.Join(m.d.snap.Unevaluated, ", "))
+		}
 	default:
 		lines = append(lines, k("")+m.spin.View()+" reading the cluster…")
 	}
@@ -863,7 +867,7 @@ func (m Model) renderStatus() string {
 			mid += sMuted.Render("  denied hidden (d)")
 		}
 	}
-	right := sMuted.Render("? help  ·  t trace  ·  y yaml  ·  q quit")
+	right := sMuted.Render("? help  ·  t trace  ·  y yaml  ·  q quit  ·  " + m.version)
 	gap1 := max(1, (m.width-lipgloss.Width(left)-lipgloss.Width(mid)-lipgloss.Width(right))/2)
 	return " " + left + strings.Repeat(" ", gap1) + mid + strings.Repeat(" ", max(1, m.width-1-lipgloss.Width(left)-gap1-lipgloss.Width(mid)-lipgloss.Width(right))) + right
 }
@@ -1266,6 +1270,9 @@ func renderPolicy(p policy.PolicyView, findings []lint.Finding, w int) string {
 		return sOK.Render(dir + ": default allow")
 	}
 	out = append(out, sTitle.Render(p.Kind+" "+name)+"  "+sMuted.Render("selects "+p.Selector)+"   "+iso("ingress", p.IsolatesIngress)+" · "+iso("egress", p.IsolatesEgress))
+	if p.Rejected != "" {
+		out = append(out, sFail.Render("NOT ENFORCED")+" Cilium rejected this policy: "+p.Rejected)
+	}
 	for _, f := range findings {
 		out = append(out, sWarn.Render(f.Code)+" "+f.Message+sMuted.Render("  "+f.Hint))
 	}
@@ -1286,8 +1293,11 @@ func renderPolicy(p policy.PolicyView, findings []lint.Finding, w int) string {
 	}
 	centerBox := sBoxSel.Width(colW).Render(strings.Join(center, "\n"))
 
-	leftBoxes, leftRules := ruleBoxes(p.Ingress, p.IsolatesIngress, "ingress", colW)
-	rightBoxes, rightRules := ruleBoxes(p.Egress, p.IsolatesEgress, "egress", colW)
+	// A rejected policy isolates nothing, but its rules are what will apply
+	// once Cilium accepts it, so they are still drawn.
+	rejected := p.Rejected != ""
+	leftBoxes, leftRules := ruleBoxes(p.Ingress, p.IsolatesIngress || (rejected && len(p.Ingress) > 0), "ingress", colW)
+	rightBoxes, rightRules := ruleBoxes(p.Egress, p.IsolatesEgress || (rejected && len(p.Egress) > 0), "egress", colW)
 	if narrow {
 		out = append(out, sHead.Render("ALLOWED SOURCES"), lipgloss.JoinVertical(lipgloss.Left, leftBoxes...),
 			sOK.Render("   ▼ into"), sHead.Render("SELECTED"), centerBox,
@@ -1511,7 +1521,7 @@ func (m Model) renderHelp() string {
 	for _, r := range rows {
 		lines = append(lines, sAccent.Render(fmt.Sprintf("%-16s", r[0]))+r[1])
 	}
-	lines = append(lines, "", sMuted.Render("any key closes this"))
+	lines = append(lines, "", sMuted.Render("netpol-map "+m.version+" · github.com/aganet/kubectl-netpol-map"), sMuted.Render("any key closes this"))
 	return sModal.Render(strings.Join(lines, "\n"))
 }
 

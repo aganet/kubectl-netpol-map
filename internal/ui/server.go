@@ -29,6 +29,7 @@ const snapshotTTL = 30 * time.Second
 type server struct {
 	fetch   func(context.Context) (*policy.Snapshot, error)
 	context string
+	version string
 
 	mu   sync.Mutex
 	snap *policy.Snapshot
@@ -55,9 +56,9 @@ func LocalOnly(next http.Handler) http.Handler {
 }
 
 // New returns the HTTP handler. fetch produces a cluster-wide snapshot (with
-// Mesh populated if available); contextName is shown in the page header.
-func New(fetch func(context.Context) (*policy.Snapshot, error), contextName string) http.Handler {
-	s := &server{fetch: fetch, context: contextName}
+// Mesh populated if available); contextName and version are shown on the page.
+func New(fetch func(context.Context) (*policy.Snapshot, error), contextName, version string) http.Handler {
+	s := &server{fetch: fetch, context: contextName, version: version}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -184,16 +185,18 @@ func (s *server) refs(w http.ResponseWriter, r *http.Request) {
 	}
 	out := struct {
 		Context     string         `json:"context"`
+		Version     string         `json:"version"`
 		FetchedAt   time.Time      `json:"fetchedAt"`
 		PodCount    int            `json:"podCount"`
 		PolicyCount int            `json:"policyCount"`
 		MeshFetched bool           `json:"meshFetched"`
+		Unevaluated []string       `json:"unevaluated"` // policy kinds present that the tool ignores
 		Namespaces  []namespaceRef `json:"namespaces"`
 		Externals   []string       `json:"externals"` // FQDNs/CIDRs the policies mention
 	}{
-		Context: s.context, FetchedAt: s.at, PodCount: len(snap.Pods),
+		Context: s.context, Version: s.version, FetchedAt: s.at, PodCount: len(snap.Pods),
 		PolicyCount: len(snap.Policies) + len(snap.CiliumNamespacePolicies) + len(snap.CiliumClusterPolicies),
-		MeshFetched: snap.Mesh != nil, Namespaces: []namespaceRef{}, Externals: snap.ExternalTargets(),
+		MeshFetched: snap.Mesh != nil, Unevaluated: snap.Unevaluated, Namespaces: []namespaceRef{}, Externals: snap.ExternalTargets(),
 	}
 	for _, n := range byNS {
 		sort.Slice(n.Services, func(i, j int) bool { return n.Services[i].Name < n.Services[j].Name })

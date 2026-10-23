@@ -2,6 +2,7 @@ package policy
 
 import (
 	"context"
+	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -39,6 +40,10 @@ type Snapshot struct {
 	// back into the cluster becomes a real edge. Nil means FQDN rules are not
 	// resolved (they remain UNKNOWN). Set by the caller, not by Fetch.
 	Resolver Resolver
+	// Unevaluated lists policy kinds present in the cluster that this tool
+	// does not evaluate ("AdminNetworkPolicy ×2"). Verdicts may then be
+	// wrong, and every output says so.
+	Unevaluated []string
 }
 
 var (
@@ -48,7 +53,35 @@ var (
 	ccnpGVR = schema.GroupVersionResource{
 		Group: "cilium.io", Version: "v2", Resource: "ciliumclusterwidenetworkpolicies",
 	}
+	// Policy kinds other engines enforce and this tool does not evaluate.
+	unevaluatedKinds = []struct {
+		gvr        schema.GroupVersionResource
+		kind       string
+		namespaced bool
+	}{
+		{schema.GroupVersionResource{Group: "policy.networking.k8s.io", Version: "v1alpha1", Resource: "adminnetworkpolicies"}, "AdminNetworkPolicy", false},
+		{schema.GroupVersionResource{Group: "policy.networking.k8s.io", Version: "v1alpha1", Resource: "baselineadminnetworkpolicies"}, "BaselineAdminNetworkPolicy", false},
+		{schema.GroupVersionResource{Group: "crd.projectcalico.org", Version: "v1", Resource: "networkpolicies"}, "Calico NetworkPolicy", true},
+		{schema.GroupVersionResource{Group: "crd.projectcalico.org", Version: "v1", Resource: "globalnetworkpolicies"}, "Calico GlobalNetworkPolicy", false},
+		{schema.GroupVersionResource{Group: "crd.antrea.io", Version: "v1beta1", Resource: "networkpolicies"}, "Antrea NetworkPolicy", true},
+		{schema.GroupVersionResource{Group: "crd.antrea.io", Version: "v1beta1", Resource: "clusternetworkpolicies"}, "Antrea ClusterNetworkPolicy", false},
+	}
 )
+
+// unevaluatedPolicies counts the policies of kinds this tool ignores.
+func unevaluatedPolicies(ctx context.Context, dc dynamic.Interface, namespace string) []string {
+	var out []string
+	for _, k := range unevaluatedKinds {
+		ns := ""
+		if k.namespaced {
+			ns = namespace
+		}
+		if n := len(listDynamic(ctx, dc, k.gvr, ns)); n > 0 {
+			out = append(out, fmt.Sprintf("%s ×%d", k.kind, n))
+		}
+	}
+	return out
+}
 
 // Fetch lists everything the evaluator needs from the cluster. Cilium CRDs
 // are listed best-effort — if the CRDs aren't installed, the corresponding
@@ -96,6 +129,7 @@ func Fetch(ctx context.Context, c *kube.Clients, namespace string) (*Snapshot, e
 		NamespaceLabels:         nsLabels,
 		CiliumNamespacePolicies: listDynamic(ctx, c.Dynamic, cnpGVR, namespace),
 		CiliumClusterPolicies:   listDynamic(ctx, c.Dynamic, ccnpGVR, ""),
+		Unevaluated:             unevaluatedPolicies(ctx, c.Dynamic, namespace),
 	}, nil
 }
 

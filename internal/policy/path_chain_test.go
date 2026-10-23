@@ -234,7 +234,7 @@ func TestNamedPortInPolicyResolves(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !allow.Cell.Allowed || len(allow.Cell.Ports) != 1 || allow.Cell.Ports[0] != "8000" {
+	if !allow.Cell.Allowed || len(allow.Cell.Ports) != 1 || allow.Cell.Ports[0] != "8000/TCP" {
 		t.Errorf("named port http should resolve to 8000 and allow: %+v", allow.Cell)
 	}
 	deny, err := ExplainPath(snap, "", "shop/frontend", "payments/api-1:9000", "")
@@ -243,6 +243,16 @@ func TestNamedPortInPolicyResolves(t *testing.T) {
 	}
 	if deny.Cell.Allowed {
 		t.Errorf("port 9000 is not the named port; expected DENY, got %q", deny.Cell.Reason)
+	}
+	// A named port no container declares matches no traffic, even with no
+	// port filter and an unrestricted source.
+	snap.Policies[0].Spec.Ingress[0].Ports[0].Port = &[]intstr.IntOrString{intstr.FromString("metrics")}[0]
+	missing, err := ExplainPath(snap, "", "shop/frontend", "payments/api-1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if missing.Cell.Allowed || !strings.Contains(missing.Cell.Reason, "named port metrics not declared") {
+		t.Errorf("undeclared named port must deny and say so, got %+v", missing.Cell)
 	}
 }
 
@@ -279,8 +289,50 @@ func TestDisjointPortsAreDenied(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !res.Cell.Allowed || len(res.Cell.Ports) != 1 || res.Cell.Ports[0] != "80" {
+	if !res.Cell.Allowed || len(res.Cell.Ports) != 1 || res.Cell.Ports[0] != "80/TCP" {
 		t.Errorf("expected ALLOW :80 when both sides open 80, got %+v", res.Cell)
+	}
+	// The same port on different protocols is no port in common either.
+	udp := corev1.ProtocolUDP
+	snap.Policies[1].Spec.Ingress[0].Ports[0].Protocol = &udp
+	res, err = ExplainPath(snap, "", "shop/frontend", "payments/api-1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Cell.Allowed || !strings.Contains(res.Cell.Reason, "ingress allows 80/UDP") {
+		t.Errorf("TCP egress and UDP ingress must not combine: got %+v", res.Cell)
+	}
+}
+
+// Protocols and endPort ranges are part of the rule: a TCP Service is not
+// reachable through a UDP rule, and a range opens every port in it.
+func TestPortProtocolAndRange(t *testing.T) {
+	snap := shopSnapshot()
+	udp := corev1.ProtocolUDP
+	port, end := intstr.FromInt(8000), int32(8100)
+	snap.Policies = []networkingv1.NetworkPolicy{{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "payments", Name: "ingress-udp-range"},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{MatchLabels: map[string]string{"app": "api"}},
+			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
+			Ingress:     []networkingv1.NetworkPolicyIngressRule{{Ports: []networkingv1.NetworkPolicyPort{{Protocol: &udp, Port: &port, EndPort: &end}}}},
+		},
+	}}
+	// The pod port 8050 lies in the range: allowed, on UDP only.
+	res, err := ExplainPath(snap, "", "shop/frontend", "payments/api-1:8050", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Cell.Allowed || len(res.Cell.Ports) != 1 || res.Cell.Ports[0] != "8000-8100/UDP" {
+		t.Errorf("port in range must be allowed with the range shown: %+v", res.Cell)
+	}
+	// Through the TCP Service port the UDP rule does not help.
+	res, err = ExplainPath(snap, "", "shop/frontend", "payments/api:8080", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Cell.Allowed || !strings.Contains(res.Cell.Reason, "the Service port is TCP") {
+		t.Errorf("a UDP rule must not open a TCP Service port: %+v", res.Cell)
 	}
 }
 

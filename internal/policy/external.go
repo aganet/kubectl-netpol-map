@@ -64,11 +64,13 @@ func externalLayers(ctx evalContext, snap *Snapshot, srcPods []corev1.Pod, t ext
 
 // externalVerdict is one source pod's egress verdict toward the target.
 type externalVerdict struct {
-	status  LayerStatus
-	reason  string
-	ports   []string
-	limited []string // for "internet": the only destinations rules open
-	fix     string
+	status   LayerStatus
+	reason   string
+	ports    []string
+	limited  []string // for "internet": the only destinations rules open
+	fix      string
+	isolated bool // some policy of this kind restricts the source's egress
+	denied   bool // a Cilium egressDeny covers the target
 }
 
 func egressPolicyLayer(ctx evalContext, srcPods []corev1.Pod, t externalTarget, port int32) Layer {
@@ -108,32 +110,54 @@ func egressPolicyLayer(ctx evalContext, srcPods []corev1.Pod, t externalTarget, 
 }
 
 // decideExternal composes the standard and Cilium egress verdicts for one
-// source pod toward an external target. Both engines must permit it.
+// source pod toward an external target. Cilium enforces both kinds from one
+// pool: a deny wins, otherwise a rule of either kind opens the target and
+// a policy of either kind isolates the source.
 func decideExternal(ctx evalContext, src corev1.Pod, t externalTarget, port int32) externalVerdict {
 	std := standardExternalEgress(ctx, src, t, port)
+	if len(ctx.cnps)+len(ctx.ccnps) == 0 {
+		return std
+	}
 	cil := ciliumExternalEgress(ctx, src, t, port)
-	out := externalVerdict{status: LayerPass, ports: intersectPorts(std.ports, cil.ports)}
-	out.limited = append(append([]string{}, std.limited...), cil.limited...)
+	if cil.denied {
+		return cil
+	}
+	if !std.isolated && !cil.isolated {
+		return externalVerdict{status: LayerPass, ports: []string{"*"}, reason: "no policy restricts egress"}
+	}
+	out := externalVerdict{isolated: true, limited: append(append([]string{}, std.limited...), cil.limited...)}
 	sort.Strings(out.limited)
-
+	var reasons []string
 	for _, v := range []externalVerdict{std, cil} {
-		if v.status == LayerFail {
-			return v
+		if v.isolated && v.status == LayerPass {
+			out.ports = append(out.ports, v.ports...)
+			reasons = append(reasons, v.reason)
 		}
 	}
+	if len(out.ports) > 0 {
+		out.status, out.ports, out.reason = LayerPass, unique(out.ports), strings.Join(reasons, "; ")
+		if !(len(out.ports) == 1 && out.ports[0] == "*") {
+			out.reason += " (ports " + strings.Join(DisplayPorts(out.ports), ",") + ")"
+		}
+		return out
+	}
+	// Closed by every kind that isolates: a caveat from either keeps the
+	// verdict a warning, otherwise it is a fail with both explanations.
+	out.status = LayerFail
 	for _, v := range []externalVerdict{std, cil} {
+		if !v.isolated {
+			continue
+		}
 		if v.status == LayerWarn {
-			out.status = LayerWarn
-			out.reason = v.reason
+			out.status, out.reason, out.fix = LayerWarn, v.reason, v.fix
+			return out
+		}
+		reasons = append(reasons, v.reason)
+		if out.fix == "" {
 			out.fix = v.fix
 		}
 	}
-	if out.status == LayerPass {
-		out.reason = std.reason + "; " + cil.reason
-		if !(len(out.ports) == 1 && out.ports[0] == "*") && len(out.ports) > 0 {
-			out.reason += " (ports " + strings.Join(out.ports, ",") + ")"
-		}
-	}
+	out.reason = strings.Join(reasons, "; ")
 	return out
 }
 
@@ -147,11 +171,11 @@ func standardExternalEgress(ctx evalContext, src corev1.Pod, t externalTarget, p
 	if len(isolating) == 0 {
 		return externalVerdict{status: LayerPass, ports: []string{"*"}, reason: "no NetworkPolicy restricts egress"}
 	}
-	v := externalVerdict{}
+	v := externalVerdict{isolated: true}
 	matched := []string{}
 	for _, p := range isolating {
 		for _, rule := range p.Spec.Egress {
-			ports := rulePorts(rule.Ports, port, corev1.Pod{})
+			ports, _ := rulePorts(rule.Ports, port, corev1.Pod{}) // a named port never matches a non-pod destination
 			if len(ports) == 0 {
 				continue
 			}
@@ -212,12 +236,12 @@ func hasIPBlockRules(ps []networkingv1.NetworkPolicy) bool {
 func ciliumExternalEgress(ctx evalContext, src corev1.Pod, t externalTarget, port int32) externalVerdict {
 	var applicable []unstructured.Unstructured
 	for _, p := range ctx.cnps {
-		if p.GetNamespace() == src.Namespace && selectsForCilium(p, src) {
+		if p.GetNamespace() == src.Namespace && selectsForCilium(ctx, p, src) {
 			applicable = append(applicable, p)
 		}
 	}
 	for _, p := range ctx.ccnps {
-		if selectsForCilium(p, src) {
+		if selectsForCilium(ctx, p, src) {
 			applicable = append(applicable, p)
 		}
 	}
@@ -228,9 +252,9 @@ func ciliumExternalEgress(ctx evalContext, src corev1.Pod, t externalTarget, por
 	isolatingNames := []string{}
 	for _, p := range applicable {
 		if m, name := ciliumRulesCover(p, "egressDeny", t, port); m {
-			return externalVerdict{status: LayerFail, reason: fmt.Sprintf("egress denied by %s (egressDeny %s)", ciliumPolicyKey(p), name)}
+			return externalVerdict{status: LayerFail, denied: true, isolated: true, reason: fmt.Sprintf("egress denied by %s (egressDeny %s)", ciliumPolicyKey(p), name)}
 		}
-		if !policyHasSection(p, "egress") {
+		if !ciliumIsolates(p, "egress") {
 			continue
 		}
 		isolated = true
@@ -241,7 +265,7 @@ func ciliumExternalEgress(ctx evalContext, src corev1.Pod, t externalTarget, por
 			if !ok {
 				continue
 			}
-			ports, portsMatch, _ := evaluateToPorts(rule, port)
+			ports, portsMatch := evaluateToPorts(rule, port, corev1.Pod{}) // a named port never matches a non-pod destination
 			if !portsMatch {
 				continue
 			}
@@ -256,6 +280,7 @@ func ciliumExternalEgress(ctx evalContext, src corev1.Pod, t externalTarget, por
 			}
 		}
 	}
+	v.isolated = isolated
 	switch {
 	case !isolated:
 		return externalVerdict{status: LayerPass, ports: []string{"*"}, reason: "no Cilium policy restricts egress"}
@@ -285,7 +310,7 @@ func ciliumRulesCover(p unstructured.Unstructured, key string, t externalTarget,
 		if !ok {
 			continue
 		}
-		if _, portsMatch, _ := evaluateToPorts(rule, port); !portsMatch {
+		if _, portsMatch := evaluateToPorts(rule, port, corev1.Pod{}); !portsMatch {
 			continue
 		}
 		if how, _, _ := ciliumRuleReaches(rule, t); how != "" {

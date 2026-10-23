@@ -2,8 +2,8 @@ version: 2
 project_name: kubectl-netpol-map
 
 builds:
-  - main: ./cmd/kubectl-netpol-map
-    binary: kubectl-netpol-map
+  - main: ./cmd/kubectl-netpol_map
+    binary: kubectl-netpol_map # kubectl maps `netpol-map` to this name
     env: [CGO_ENABLED=0]
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]

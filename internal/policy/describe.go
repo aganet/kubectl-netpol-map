@@ -25,6 +25,9 @@ type PolicyView struct {
 	IsolatesEgress  bool          `json:"isolatesEgress"`
 	Ingress         []RuleView    `json:"ingress"`
 	Egress          []RuleView    `json:"egress"`
+	// Rejected is why Cilium refused the policy (status Valid=False); it is
+	// then not enforced and ignored by every verdict.
+	Rejected string `json:"rejected,omitempty"`
 }
 
 // WorkloadRef identifies a workload and how many pods it has.
@@ -69,7 +72,7 @@ func Describe(snap *Snapshot) ([]PolicyView, Coverage) {
 		views = append(views, describeStandard(ctx, np, workloads))
 	}
 	for _, p := range append(append([]unstructured.Unstructured{}, snap.CiliumNamespacePolicies...), snap.CiliumClusterPolicies...) {
-		views = append(views, describeCilium(p, workloads))
+		views = append(views, describeCilium(ctx, p, workloads))
 	}
 	sort.Slice(views, func(i, j int) bool { return views[i].Key < views[j].Key })
 
@@ -83,10 +86,10 @@ func Describe(snap *Snapshot) ([]PolicyView, Coverage) {
 				out = out || hasType(np, networkingv1.PolicyTypeEgress)
 			}
 		}
-		for _, p := range append(append([]unstructured.Unstructured{}, snap.CiliumNamespacePolicies...), snap.CiliumClusterPolicies...) {
-			if selectsForCilium(p, rep) {
-				in = in || policyHasSection(p, "ingress")
-				out = out || policyHasSection(p, "egress")
+		for _, p := range append(append([]unstructured.Unstructured{}, ctx.cnps...), ctx.ccnps...) {
+			if selectsForCilium(ctx, p, rep) {
+				in = in || ciliumIsolates(p, "ingress")
+				out = out || ciliumIsolates(p, "egress")
 			}
 		}
 		if in {
@@ -206,17 +209,19 @@ func selectorText(s string) string {
 	return s
 }
 
-func describeCilium(p unstructured.Unstructured, workloads []Workload) PolicyView {
+func describeCilium(ctx evalContext, p unstructured.Unstructured, workloads []Workload) PolicyView {
+	rejected, isRejected := CiliumRejected(p)
 	v := PolicyView{
 		Key: p.GetKind() + "/" + ciliumPolicyKey(p), Kind: p.GetKind(),
 		Namespace: p.GetNamespace(), Name: p.GetName(),
-		IsolatesIngress: policyHasSection(p, "ingress"),
-		IsolatesEgress:  policyHasSection(p, "egress"),
+		IsolatesIngress: !isRejected && ciliumIsolates(p, "ingress"),
+		IsolatesEgress:  !isRejected && ciliumIsolates(p, "egress"),
 		Ingress:         []RuleView{}, Egress: []RuleView{},
 	}
-	sel, _, _ := unstructured.NestedMap(p.Object, "spec", "endpointSelector", "matchLabels")
-	v.Selector = selectorText(ciliumLabelsText(sel))
-	v.Selected = matchingWorkloads(workloads, func(pod corev1.Pod) bool { return selectsForCilium(p, pod) })
+	v.Rejected = rejected
+	sel, _, _ := unstructured.NestedMap(p.Object, "spec", "endpointSelector")
+	v.Selector = selectorText(ciliumSelectorText(sel))
+	v.Selected = matchingWorkloads(workloads, func(pod corev1.Pod) bool { return selectsForCilium(ctx, p, pod) })
 
 	endpointPeers := func(raw []interface{}) []PeerView {
 		out := []PeerView{}
@@ -225,10 +230,9 @@ func describeCilium(p unstructured.Unstructured, workloads []Workload) PolicyVie
 			if !ok {
 				continue
 			}
-			ml, _, _ := unstructured.NestedMap(m, "matchLabels")
 			one := []interface{}{m}
-			out = append(out, PeerView{Type: "pods", Label: "pods " + selectorText(ciliumLabelsText(ml)),
-				Matches: matchingWorkloads(workloads, func(pod corev1.Pod) bool { return anyEndpointMatches(one, pod, p.GetNamespace()) })})
+			out = append(out, PeerView{Type: "pods", Label: "pods " + selectorText(ciliumSelectorText(m)),
+				Matches: matchingWorkloads(workloads, func(pod corev1.Pod) bool { return anyEndpointMatches(ctx, one, pod, p.GetNamespace()) })})
 		}
 		return out
 	}
@@ -241,7 +245,7 @@ func describeCilium(p unstructured.Unstructured, workloads []Workload) PolicyVie
 				continue
 			}
 			rv := RuleView{Deny: strings.HasSuffix(key, "Deny"), Ports: ciliumPorts(rule), Peers: []PeerView{}}
-			rv.L7, _ = ruleHasL7(rule)
+			rv.L7 = ruleHasL7(rule)
 			eps, _, _ := unstructured.NestedSlice(rule, dir+"Endpoints")
 			rv.Peers = append(rv.Peers, endpointPeers(eps)...)
 			for _, e := range stringList(rule, dir+"Entities") {
@@ -273,18 +277,6 @@ func describeCilium(p unstructured.Unstructured, workloads []Workload) PolicyVie
 	v.Ingress = append(rules("ingress", "from"), rules("ingressDeny", "from")...)
 	v.Egress = append(rules("egress", "to"), rules("egressDeny", "to")...)
 	return v
-}
-
-func ciliumLabelsText(ml map[string]interface{}) string {
-	if len(ml) == 0 {
-		return ""
-	}
-	parts := []string{}
-	for k, v := range stripCiliumLabelPrefixes(normalizeStringMap(ml)) {
-		parts = append(parts, k+"="+v)
-	}
-	sort.Strings(parts)
-	return strings.Join(parts, ",")
 }
 
 func ciliumPorts(rule map[string]interface{}) []string {

@@ -11,6 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/aganet/kubectl-netpol-map/internal/policy"
@@ -74,6 +75,8 @@ var allRules = []rule{
 	ruleL003AllowFromAnywhere,
 	ruleL004IsolationOverlap,
 	ruleL005StandardCiliumOverlap,
+	ruleL006CiliumRejected,
+	ruleL007Unevaluated,
 }
 
 // L001: a NetworkPolicy's podSelector matches zero pods in its namespace.
@@ -222,10 +225,50 @@ func ruleL005StandardCiliumOverlap(snap *policy.Snapshot) []Finding {
 					Severity: SevInfo,
 					Subject:  fmt.Sprintf("%s ⇄ %s/%s (CNP)", policyKey(std), cnp.GetNamespace(), cnp.GetName()),
 					Message:  "standard NetworkPolicy and CiliumNetworkPolicy select overlapping pods",
-					Hint:     "verify combined semantics: both engines must allow traffic for it to pass",
+					Hint:     "Cilium enforces both from one pool: a rule of either kind opens traffic, a deny rule closes it",
 				})
 			}
 		}
+	}
+	return out
+}
+
+// L006: Cilium refused to import the policy (status Valid=False). It is not
+// enforced, so whatever it was meant to deny is currently allowed.
+func ruleL006CiliumRejected(snap *policy.Snapshot) []Finding {
+	out := []Finding{}
+	for _, p := range append(append([]unstructured.Unstructured{}, snap.CiliumNamespacePolicies...), snap.CiliumClusterPolicies...) {
+		msg, rejected := policy.CiliumRejected(p)
+		if !rejected {
+			continue
+		}
+		subject := p.GetName()
+		if p.GetNamespace() != "" {
+			subject = p.GetNamespace() + "/" + p.GetName()
+		}
+		out = append(out, Finding{
+			Code:     "L006",
+			Severity: SevError,
+			Subject:  subject,
+			Message:  "rejected by Cilium, not enforced: " + msg,
+			Hint:     "fix the policy until kubectl get " + strings.ToLower(p.GetKind()) + " shows VALID=True; until then it protects nothing",
+		})
+	}
+	return out
+}
+
+// L007: policies of a kind this tool does not evaluate exist, so every
+// verdict it gives may be wrong.
+func ruleL007Unevaluated(snap *policy.Snapshot) []Finding {
+	out := []Finding{}
+	for _, u := range snap.Unevaluated {
+		out = append(out, Finding{
+			Code:     "L007",
+			Severity: SevError,
+			Subject:  u,
+			Message:  "not evaluated by this tool; verdicts may be wrong where it applies",
+			Hint:     "review that policy by hand; only NetworkPolicy and Cilium policies are evaluated",
+		})
 	}
 	return out
 }

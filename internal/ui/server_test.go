@@ -51,7 +51,7 @@ func testHandler(t *testing.T) http.Handler {
 			t.Errorf("snapshot should be cached across requests, fetched %d times", fetches)
 		}
 		return snap, nil
-	}, "test-ctx")
+	}, "test-ctx", "test")
 	return h
 }
 

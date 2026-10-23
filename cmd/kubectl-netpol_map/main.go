@@ -145,6 +145,16 @@ Examples:
 			if err != nil {
 				return err
 			}
+			if len(snap.Pods) == 0 && ns != "" {
+				// The usual first run: the kubeconfig namespace is "default" and
+				// holds nothing. Point at what is worth running instead.
+				fmt.Fprintf(os.Stderr, "namespace %q has no pods. Try:\n"+
+					"  kubectl netpol-map -A           every namespace\n"+
+					"  kubectl netpol-map -n <ns>      one namespace\n"+
+					"  kubectl netpol-map ui           the policy map in the browser\n"+
+					"  kubectl netpol-map tui          the same in the terminal\n", ns)
+				return nil
+			}
 			if resolveFQDN {
 				snap.Resolver = policy.NewNetResolver()
 			}
@@ -227,7 +237,7 @@ source → destination. Press ? inside the app for all keys.`,
 		Args: cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
 			fetch := func(ctx context.Context) (*policy.Snapshot, error) { return src.snapshot(ctx, "", true) }
-			return tui.Run(tui.New(fetch, src.name()))
+			return tui.Run(tui.New(fetch, src.name(), version))
 		},
 	}
 }
@@ -272,7 +282,7 @@ kubeconfig; nothing is deployed. Stop it with Ctrl-C.`,
 			if !noOpen {
 				openBrowser(url)
 			}
-			handler := ui.New(fetch, src.name())
+			handler := ui.New(fetch, src.name(), version)
 			if ln.Addr().(*net.TCPAddr).IP.IsLoopback() {
 				handler = ui.LocalOnly(handler)
 			} else {

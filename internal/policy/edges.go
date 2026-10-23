@@ -62,7 +62,7 @@ func Edges(snap *Snapshot, fromNS, toNS string, port int32, includeDefault bool)
 			out = append(out, Edge{
 				From:   WorkloadRef{Namespace: src.Namespace, Kind: src.Kind, Name: src.Name, Pods: len(src.Pods)},
 				To:     WorkloadRef{Namespace: dst.Namespace, Kind: dst.Kind, Name: dst.Name, Pods: len(dst.Pods)},
-				Status: status, Verdict: c.Verdict(), Ports: c.Ports, Reason: c.Reason,
+				Status: status, Verdict: c.Verdict(), Ports: DisplayPorts(c.Ports), Reason: c.Reason,
 			})
 		}
 	}
