@@ -192,7 +192,7 @@ func collectExternalEgress(ctx evalContext, rows []Axis, resolver Resolver) []Ex
 				if !ok {
 					continue
 				}
-				ports, _, _ := evaluateToPorts(ruleMap, 0)
+				ports, _ := evaluateToPorts(ruleMap, 0, corev1.Pod{})
 				// FQDNs.
 				if names, patterns := fqdnNames(ruleMap); len(names)+len(patterns) > 0 {
 					for _, n := range names {
@@ -231,20 +231,37 @@ func externalOnly(resolved []string, podIPs map[string]string) bool {
 	return true
 }
 
-// fqdnDecidable reports whether a toFQDNs rule can be settled for pods: all
-// its names resolved (so a non-match means the rule points elsewhere) and it
-// carries no wildcard pattern.
+// fqdnDecidable reports whether a toFQDNs rule can be settled for pods. A
+// name that resolved (to other IPs) points elsewhere; a name or pattern
+// outside the cluster DNS domain cannot name a pod at all, since pods only
+// answer to names under svc.cluster.local and pod.cluster.local. Only an
+// unresolved name or a pattern inside that domain stays undecided.
 func fqdnDecidable(ctx evalContext, rule map[string]interface{}) bool {
 	names, patterns := fqdnNames(rule)
-	if len(patterns) > 0 || ctx.resolver == nil {
-		return false
+	for _, p := range patterns {
+		if mayNameClusterPod(p) {
+			return false
+		}
 	}
 	for _, n := range names {
-		if len(ctx.resolver.Resolve(normalizeFQDN(n))) == 0 {
+		if mayNameClusterPod(n) && (ctx.resolver == nil || len(ctx.resolver.Resolve(normalizeFQDN(n))) == 0) {
 			return false
 		}
 	}
 	return true
+}
+
+// mayNameClusterPod reports whether a toFQDNs name or matchPattern could
+// match a cluster-internal DNS name. The literal text after the last "*"
+// must be a suffix of such a name; "*.amazonaws.com" cannot be, "*" and
+// "*.cluster.local" can. Assumes the cluster DNS domain is cluster.local.
+func mayNameClusterPod(s string) bool {
+	suffix := normalizeFQDN(s)
+	if i := strings.LastIndex(suffix, "*"); i >= 0 {
+		suffix = suffix[i+1:]
+	}
+	return strings.HasSuffix(".svc.cluster.local", suffix) || strings.HasSuffix(".pod.cluster.local", suffix) ||
+		strings.HasSuffix(suffix, ".svc.cluster.local") || strings.HasSuffix(suffix, ".pod.cluster.local")
 }
 
 func cidrTargets(rule map[string]interface{}) []string {

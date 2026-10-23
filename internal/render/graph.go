@@ -98,7 +98,7 @@ func portLabel(ports []string) string {
 	if len(ports) == 0 || (len(ports) == 1 && ports[0] == "*") {
 		return ""
 	}
-	return ":" + strings.Join(ports, ",")
+	return ":" + strings.Join(policy.DisplayPorts(ports), ",")
 }
 
 func namespaceOf(display string) string {

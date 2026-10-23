@@ -1,9 +1,12 @@
 package policy
 
 import (
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
@@ -24,9 +27,10 @@ func ports(p string) map[string]interface{} {
 }
 
 // The common real-world Cilium egress policy: DNS to kube-dns with an L7
-// DNS rule, plus toFQDNs to external names. With a resolver the names are
-// known to be external, so every other pod is a definite DENY, not UNKNOWN,
-// and kube-dns itself is an ALLOW flagged L7.
+// DNS rule, plus toFQDNs to external names. A name outside the cluster DNS
+// domain cannot name a pod, so every other pod is a definite DENY even
+// without a resolver; only a name inside it stays UNKNOWN until resolved.
+// kube-dns itself is an ALLOW flagged L7.
 func TestCiliumResolvedFQDNAndDNSRuleAreDecidable(t *testing.T) {
 	dns := readyPod("kube-system", "coredns-1", map[string]string{"k8s-app": "kube-dns"}, map[string]int32{"dns": 53})
 	src := pod("shop", "worker-1", map[string]string{"app": "worker"})
@@ -46,14 +50,26 @@ func TestCiliumResolvedFQDNAndDNSRuleAreDecidable(t *testing.T) {
 	)
 	snap := &Snapshot{Pods: []corev1.Pod{src, dns, other}, CiliumNamespacePolicies: []unstructured.Unstructured{policy}}
 
-	// Without a resolver the FQDN rule cannot be settled: UNKNOWN.
 	res, err := ExplainPath(snap, "", "shop/worker-1", "payments/api-1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !res.Cell.Unknown {
-		t.Errorf("unresolved FQDN rule must leave the pair UNKNOWN, got %+v", res.Cell)
+	if res.Cell.Allowed || res.Cell.Unknown {
+		t.Errorf("an external name cannot name a pod, resolver or not: expected DENY, got %+v", res.Cell)
 	}
+	// A cluster-internal name could be the destination pod: undecided until
+	// resolved, the same for a pattern that could match one.
+	for _, entry := range []map[string]interface{}{{"matchName": "api.payments.svc.cluster.local"}, {"matchPattern": "*.cluster.local"}, {"matchPattern": "*"}} {
+		policy.Object["spec"].(map[string]interface{})["egress"].([]interface{})[1].(map[string]interface{})["toFQDNs"] = []interface{}{entry}
+		res, err = ExplainPath(snap, "", "shop/worker-1", "payments/api-1", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !res.Cell.Unknown {
+			t.Errorf("%v could name a pod: expected UNKNOWN, got %+v", entry, res.Cell)
+		}
+	}
+	policy.Object["spec"].(map[string]interface{})["egress"].([]interface{})[1].(map[string]interface{})["toFQDNs"] = []interface{}{map[string]interface{}{"matchName": "api.stripe.com"}, map[string]interface{}{"matchPattern": "*.amazonaws.com"}}
 
 	snap.Resolver = MapResolver{"api.stripe.com": {"203.0.113.10"}}
 	res, err = ExplainPath(snap, "", "shop/worker-1", "payments/api-1", "")
@@ -129,6 +145,133 @@ func TestCiliumSelectorsNamespacesAndExpressions(t *testing.T) {
 	}
 	if views, _ := Describe(snap); views[0].Selector != "io.cilium.k8s.namespace.labels.team=web" || len(views[0].Selected) != 1 {
 		t.Errorf("unexpected CCNP view: %+v", views[0])
+	}
+}
+
+// Cilium ports: protocol defaults to ANY, endPort gives a range, a named
+// port resolves on the destination, and an icmps-only rule opens no L4 port.
+func TestCiliumPortsProtocolRangeNamedICMP(t *testing.T) {
+	src := pod("shop", "worker-1", map[string]string{"app": "worker"})
+	dst := readyPod("payments", "api-1", map[string]string{"app": "api"}, map[string]int32{"http": 8000})
+	api := map[string]interface{}{"toEndpoints": []interface{}{map[string]interface{}{"matchLabels": map[string]interface{}{"k8s:io.kubernetes.pod.namespace": "payments", "app": "api"}}}}
+	mk := func(extra map[string]interface{}) *Snapshot {
+		rule := map[string]interface{}{}
+		for k, v := range api {
+			rule[k] = v
+		}
+		for k, v := range extra {
+			rule[k] = v
+		}
+		return &Snapshot{Pods: []corev1.Pod{src, dst}, CiliumNamespacePolicies: []unstructured.Unstructured{cnp("shop", rule)}}
+	}
+	verdict := func(snap *Snapshot, port string) Cell {
+		res, err := ExplainPath(snap, "", "shop/worker-1", "payments/api-1"+port, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Cell
+	}
+	rng := map[string]interface{}{"toPorts": []interface{}{map[string]interface{}{"ports": []interface{}{map[string]interface{}{"port": "8000", "endPort": int64(8100), "protocol": "UDP"}}}}}
+	if c := verdict(mk(rng), ":8050"); !c.Allowed || c.Ports[0] != "8000-8100/UDP" {
+		t.Errorf("port in a UDP range must be allowed as such: %+v", c)
+	}
+	if c := verdict(mk(rng), ":9000"); c.Allowed {
+		t.Errorf("port outside the range must be denied: %+v", c)
+	}
+	named := map[string]interface{}{"toPorts": []interface{}{map[string]interface{}{"ports": []interface{}{map[string]interface{}{"port": "http"}}}}}
+	if c := verdict(mk(named), ":8000"); !c.Allowed || c.Ports[0] != "8000/ANY" {
+		t.Errorf("named port must resolve on the destination with protocol ANY: %+v", c)
+	}
+	if c := verdict(mk(named), ":8080"); c.Allowed {
+		t.Errorf("named port http is 8000, not 8080: %+v", c)
+	}
+	icmp := map[string]interface{}{"icmps": []interface{}{map[string]interface{}{"fields": []interface{}{map[string]interface{}{"type": int64(8)}}}}}
+	if c := verdict(mk(icmp), ""); c.Allowed || c.Unknown {
+		t.Errorf("an icmps-only rule opens no L4 port: expected DENY, got %+v", c)
+	}
+}
+
+// Cilium enforces standard and Cilium policies from one pool (verified on
+// Cilium 1.20: a pair denied by the standard policies became reachable when
+// Cilium rules alone opened it). A rule of either kind opens the traffic.
+func TestCiliumUnionsWithStandardPolicies(t *testing.T) {
+	src := pod("shop", "worker-1", map[string]string{"app": "worker"})
+	dst := readyPod("payments", "api-1", map[string]string{"app": "api"}, nil)
+	// A standard policy isolates the worker's egress and opens nothing to api.
+	egressOnlyDNS := networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "worker-egress"},
+		Spec: networkingv1.NetworkPolicySpec{
+			PodSelector: metav1.LabelSelector{MatchLabels: map[string]string{"app": "worker"}},
+			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress},
+			Egress:      []networkingv1.NetworkPolicyEgressRule{{To: []networkingv1.NetworkPolicyPeer{{PodSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "none"}}}}}},
+		},
+	}
+	toAPI := cnp("shop", map[string]interface{}{"toEndpoints": []interface{}{map[string]interface{}{"matchLabels": map[string]interface{}{"k8s:io.kubernetes.pod.namespace": "payments", "app": "api"}}}})
+	snap := &Snapshot{Pods: []corev1.Pod{src, dst}, Policies: []networkingv1.NetworkPolicy{egressOnlyDNS}}
+	res, err := ExplainPath(snap, "", "shop/worker-1", "payments/api-1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Cell.Allowed {
+		t.Errorf("standard policy alone must deny: %+v", res.Cell)
+	}
+	snap.CiliumNamespacePolicies = []unstructured.Unstructured{toAPI}
+	res, err = ExplainPath(snap, "", "shop/worker-1", "payments/api-1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Cell.Allowed || !strings.Contains(res.Cell.Reason, "egress allowed by shop/egress") {
+		t.Errorf("a Cilium rule opens what the standard policy left closed: %+v", res.Cell)
+	}
+	// The other way round too: a standard allow is not narrowed by a Cilium
+	// policy that opens something else.
+	snap.Policies[0].Spec.Egress[0].To[0].PodSelector.MatchLabels["app"] = "api"
+	snap.Policies[0].Spec.Egress[0].To[0].NamespaceSelector = &metav1.LabelSelector{}
+	snap.CiliumNamespacePolicies = []unstructured.Unstructured{cnp("shop", map[string]interface{}{"toEntities": []interface{}{"world"}})}
+	res, err = ExplainPath(snap, "", "shop/worker-1", "payments/api-1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Cell.Allowed || !strings.Contains(res.Cell.Reason, "egress allowed by shop/worker-egress") {
+		t.Errorf("a standard rule opens what the Cilium policy left closed: %+v", res.Cell)
+	}
+}
+
+// A policy with only deny rules still puts the pods it selects into
+// default-deny (verified against Cilium 1.20: a cluster-wide egressDeny
+// isolated every endpoint), unless enableDefaultDeny turns that off.
+func TestCiliumDenyOnlyPolicyIsolates(t *testing.T) {
+	src := pod("shop", "worker-1", map[string]string{"app": "worker"})
+	dst := readyPod("payments", "api-1", map[string]string{"app": "api"}, nil)
+	denyOnly := cnp("", map[string]interface{}{})
+	denyOnly.Object["kind"] = "CiliumClusterwideNetworkPolicy"
+	denyOnly.Object["metadata"] = map[string]interface{}{"name": "deny-metadata"}
+	spec := denyOnly.Object["spec"].(map[string]interface{})
+	delete(spec, "egress")
+	spec["egressDeny"] = []interface{}{map[string]interface{}{"toCIDR": []interface{}{"169.254.169.254/32"}}}
+	snap := &Snapshot{Pods: []corev1.Pod{src, dst}, CiliumClusterPolicies: []unstructured.Unstructured{denyOnly}}
+
+	res, err := ExplainPath(snap, "", "shop/worker-1", "payments/api-1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Cell.Allowed || res.Cell.Unknown {
+		t.Errorf("a deny-only policy isolates egress: expected DENY, got %+v", res.Cell)
+	}
+	if views, cov := Describe(snap); !views[0].IsolatesEgress || cov.IsolatedEgress != 2 {
+		t.Errorf("deny-only policy must count as isolating: %+v %+v", views[0], cov)
+	}
+
+	spec["enableDefaultDeny"] = map[string]interface{}{"egress": false}
+	res, err = ExplainPath(snap, "", "shop/worker-1", "payments/api-1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Cell.Allowed {
+		t.Errorf("enableDefaultDeny.egress=false must not isolate: got %+v", res.Cell)
+	}
+	if views, _ := Describe(snap); views[0].IsolatesEgress {
+		t.Errorf("enableDefaultDeny.egress=false must not count as isolating: %+v", views[0])
 	}
 }
 

@@ -111,9 +111,10 @@ func TestResolveRefByLabel(t *testing.T) {
 	}
 }
 
-// A source isolated by an egress policy whose ONLY matching rule is a
-// toFQDNs rule (which the engine can't evaluate) must yield UNKNOWN, not a
-// false DENY. This is the clients→external-FQDN case.
+// A source isolated by an egress policy whose only rule is a toFQDNs rule
+// is a decided DENY toward a pod when the name is outside the cluster DNS
+// domain (no pod answers to it), and UNKNOWN only when the name is inside
+// it and unresolved.
 func TestFQDNOnlyEgressIsUnknownNotDeny(t *testing.T) {
 	cnp := unstructured.Unstructured{Object: map[string]interface{}{
 		"apiVersion": "cilium.io/v2",
@@ -147,11 +148,17 @@ func TestFQDNOnlyEgressIsUnknownNotDeny(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Cell.Allowed {
-		t.Fatalf("did not expect ALLOW; FQDN rule is not evaluated")
+	if res.Cell.Allowed || res.Cell.Unknown {
+		t.Errorf("an external name cannot name a pod: expected DENY, got %+v", res.Cell)
 	}
-	if !res.Cell.Unknown {
-		t.Errorf("expected UNKNOWN (isolated + skipped FQDN rule), got DENY with reason %q", res.Cell.Reason)
+	egress := cnp.Object["spec"].(map[string]interface{})["egress"].([]interface{})[0].(map[string]interface{})
+	egress["toFQDNs"] = []interface{}{map[string]interface{}{"matchName": "some.other.svc.cluster.local"}}
+	res, err = ExplainPath(snap, "", "clients/web-a-123", "other/some-pod-1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Cell.Allowed || !res.Cell.Unknown {
+		t.Errorf("an unresolved cluster-local name could be the pod: expected UNKNOWN, got %+v", res.Cell)
 	}
 }
 

@@ -3,7 +3,6 @@ package policy
 import (
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -213,7 +212,7 @@ func (c Cell) Verdict() string {
 	}
 	v := "ALLOW"
 	if len(c.Ports) > 0 && !(len(c.Ports) == 1 && c.Ports[0] == "*") {
-		v += " :" + strings.Join(c.Ports, ",")
+		v += " :" + strings.Join(DisplayPorts(c.Ports), ",")
 	}
 	if c.L7Restricted {
 		v += " (L7)"
@@ -423,131 +422,128 @@ func selectPods(pods []corev1.Pod, selector string) ([]corev1.Pod, error) {
 	return out, nil
 }
 
-func decide(ctx evalContext, src, dst corev1.Pod, port int32) Cell {
-	// Standard NetworkPolicy layer.
-	egressOK, egressPorts, egressReason := checkEgress(ctx, src, dst, port)
-	if !egressOK {
-		return Cell{Allowed: false, PolicyApplied: true, Reason: egressReason}
-	}
-	ingressOK, ingressPorts, ingressReason := checkIngress(ctx, src, dst, port)
-	if !ingressOK {
-		return Cell{Allowed: false, PolicyApplied: true, Reason: ingressReason}
-	}
-	stdPorts := intersectPorts(egressPorts, ingressPorts)
-	if len(stdPorts) == 0 {
-		return Cell{Allowed: false, PolicyApplied: true, Reason: fmt.Sprintf(
-			"no port in common: egress allows %s, ingress allows %s", strings.Join(egressPorts, ","), strings.Join(ingressPorts, ","))}
-	}
-	stdReason := ingressReason + "; " + egressReason
-	stdApplied := !strings.Contains(egressReason, "no policy restricts egress") ||
-		!strings.Contains(ingressReason, "no policy restricts ingress")
-
-	// Cilium layer (CNP + CCNP). Both engines must permit for the edge to
-	// pass; an explicit Cilium deny short-circuits.
-	if len(ctx.cnps) == 0 && len(ctx.ccnps) == 0 {
-		return Cell{Allowed: true, PolicyApplied: stdApplied, Ports: stdPorts, Reason: stdReason}
-	}
-	cv := evaluateCilium(ctx, src, dst, port)
-	if cv.Denied {
-		return Cell{Allowed: false, PolicyApplied: true, Reason: cv.Reason}
-	}
-	if !cv.Allowed {
-		return Cell{Allowed: false, Unknown: cv.Uncertain, PolicyApplied: true, Reason: cv.Reason}
-	}
-	if !cv.HasPolicy {
-		return Cell{Allowed: true, PolicyApplied: stdApplied, Ports: stdPorts, Reason: stdReason}
-	}
-	// Intersect ports between standard and Cilium layers.
-	finalPorts := intersectPorts(stdPorts, cv.Ports)
-	if len(finalPorts) == 0 && len(cv.Ports) > 0 {
-		return Cell{Allowed: false, PolicyApplied: true, Reason: fmt.Sprintf(
-			"no port in common: NetworkPolicy allows %s, Cilium allows %s", strings.Join(stdPorts, ","), strings.Join(cv.Ports, ","))}
-	}
-	reason := stdReason + "; " + cv.Reason
-	if cv.Skipped > 0 {
-		reason += fmt.Sprintf(" (L7/FQDN rules not evaluated: %d)", cv.Skipped)
-	}
-	return Cell{Allowed: true, L7Restricted: cv.L7Restricted, PolicyApplied: true, Ports: finalPorts, Reason: reason}
+// side is what the policies selecting one end of a pair say about one
+// direction: whether they isolate it and which rules open it.
+type side struct {
+	isolated   bool
+	isolatedBy []string
+	ports      []string // opened by matching rules; empty when none matched
+	allowedBy  []string
+	unresolved []string // named ports the destination does not declare
+	skipped    int      // Cilium rules that could not be decided
+	l7         bool     // an opening Cilium rule carries L7 conditions
 }
 
-func checkEgress(ctx evalContext, src, dst corev1.Pod, port int32) (bool, []string, string) {
-	isolating := []networkingv1.NetworkPolicy{}
-	for _, p := range ctx.policies {
-		if p.Namespace != src.Namespace {
-			continue
-		}
-		if !selects(p.Spec.PodSelector, src) {
-			continue
-		}
-		if hasType(p, networkingv1.PolicyTypeEgress) {
-			isolating = append(isolating, p)
-		}
+// union merges what another policy kind says about the same direction.
+// Cilium enforces standard and Cilium policies from one pool, so a
+// direction is isolated when any selecting policy isolates it and open
+// when any rule of either kind allows the traffic.
+func (s side) union(o side) side {
+	return side{
+		isolated: s.isolated || o.isolated, isolatedBy: append(s.isolatedBy, o.isolatedBy...),
+		ports: append(s.ports, o.ports...), allowedBy: append(s.allowedBy, o.allowedBy...),
+		unresolved: append(s.unresolved, o.unresolved...), skipped: s.skipped + o.skipped, l7: s.l7 || o.l7,
 	}
-	if len(isolating) == 0 {
-		return true, []string{"*"}, "no policy restricts egress"
-	}
+}
 
-	matched := []string{}
-	allowed := []string{}
-	var unresolved []string
-	for _, p := range isolating {
+// open reports what the side lets through and why. ports is nil when the
+// direction is closed; unknown marks a closed verdict that an undecided
+// Cilium rule might still open.
+func (s side) open(dir string) (ports []string, reason string, unknown bool) {
+	if !s.isolated {
+		return []string{"*"}, "no policy restricts " + dir, false
+	}
+	if len(s.ports) == 0 {
+		who, what := "src", "no rule matches dst"
+		if dir == "ingress" {
+			who, what = "dst", "no rule allows src"
+		}
+		reason = fmt.Sprintf("%s isolated for %s by %s; %s%s", who, dir, strings.Join(unique(s.isolatedBy), ", "), what, unresolvedNote(s.unresolved))
+		if s.skipped > 0 {
+			return nil, reason + fmt.Sprintf(", but %d Cilium rule(s) could not be decided", s.skipped), true
+		}
+		return nil, reason, false
+	}
+	reason = dir + " allowed by " + strings.Join(unique(s.allowedBy), ", ")
+	if s.skipped > 0 {
+		reason += fmt.Sprintf(" (%d other Cilium rule(s) could not be decided)", s.skipped)
+	}
+	return unique(s.ports), reason, false
+}
+
+func decide(ctx evalContext, src, dst corev1.Pod, port int32) Cell {
+	eg, in := checkEgress(ctx, src, dst, port), checkIngress(ctx, src, dst, port)
+	if len(ctx.cnps)+len(ctx.ccnps) > 0 {
+		cv := evaluateCilium(ctx, src, dst, port)
+		if cv.Denied {
+			return Cell{PolicyApplied: true, Reason: cv.Reason}
+		}
+		eg, in = eg.union(cv.Egress), in.union(cv.Ingress)
+	}
+	egPorts, egReason, egUnknown := eg.open("egress")
+	if egPorts == nil {
+		return Cell{Unknown: egUnknown, PolicyApplied: true, Reason: egReason}
+	}
+	inPorts, inReason, inUnknown := in.open("ingress")
+	if inPorts == nil {
+		return Cell{Unknown: inUnknown, PolicyApplied: true, Reason: inReason}
+	}
+	ports := intersectPorts(egPorts, inPorts)
+	if len(ports) == 0 {
+		return Cell{PolicyApplied: true, Reason: fmt.Sprintf(
+			"no port in common: egress allows %s, ingress allows %s", strings.Join(DisplayPorts(egPorts), ","), strings.Join(DisplayPorts(inPorts), ","))}
+	}
+	return Cell{Allowed: true, L7Restricted: eg.l7 || in.l7, PolicyApplied: eg.isolated || in.isolated, Ports: ports, Reason: inReason + "; " + egReason}
+}
+
+// checkEgress is what the standard NetworkPolicies selecting src say about
+// its egress to dst.
+func checkEgress(ctx evalContext, src, dst corev1.Pod, port int32) side {
+	var s side
+	for _, p := range ctx.policies {
+		if p.Namespace != src.Namespace || !selects(p.Spec.PodSelector, src) || !hasType(p, networkingv1.PolicyTypeEgress) {
+			continue
+		}
+		s.isolated = true
+		s.isolatedBy = append(s.isolatedBy, p.Namespace+"/"+p.Name)
 		for _, rule := range p.Spec.Egress {
 			if !peersMatch(ctx, rule.To, dst, p.Namespace) {
 				continue
 			}
 			ports, missing := rulePorts(rule.Ports, port, dst)
-			unresolved = append(unresolved, missing...)
-			if len(ports) == 0 {
-				continue
+			s.unresolved = append(s.unresolved, missing...)
+			if len(ports) > 0 {
+				s.ports = append(s.ports, ports...)
+				s.allowedBy = append(s.allowedBy, p.Namespace+"/"+p.Name)
 			}
-			allowed = append(allowed, ports...)
-			matched = append(matched, fmt.Sprintf("%s/%s", p.Namespace, p.Name))
 		}
 	}
-	if len(allowed) == 0 {
-		return false, nil, fmt.Sprintf("src isolated for egress by %s; no rule matches dst%s", policyNames(isolating), unresolvedNote(unresolved))
-	}
-	return true, allowed, fmt.Sprintf("egress allowed by %s", strings.Join(unique(matched), ", "))
+	return s
 }
 
-func checkIngress(ctx evalContext, src, dst corev1.Pod, port int32) (bool, []string, string) {
-	isolating := []networkingv1.NetworkPolicy{}
+// checkIngress is what the standard NetworkPolicies selecting dst say about
+// its ingress from src.
+func checkIngress(ctx evalContext, src, dst corev1.Pod, port int32) side {
+	var s side
 	for _, p := range ctx.policies {
-		if p.Namespace != dst.Namespace {
+		if p.Namespace != dst.Namespace || !selects(p.Spec.PodSelector, dst) || !hasType(p, networkingv1.PolicyTypeIngress) {
 			continue
 		}
-		if !selects(p.Spec.PodSelector, dst) {
-			continue
-		}
-		if hasType(p, networkingv1.PolicyTypeIngress) {
-			isolating = append(isolating, p)
-		}
-	}
-	if len(isolating) == 0 {
-		return true, []string{"*"}, "no policy restricts ingress"
-	}
-
-	matched := []string{}
-	allowed := []string{}
-	var unresolved []string
-	for _, p := range isolating {
+		s.isolated = true
+		s.isolatedBy = append(s.isolatedBy, p.Namespace+"/"+p.Name)
 		for _, rule := range p.Spec.Ingress {
 			if !peersMatch(ctx, rule.From, src, p.Namespace) {
 				continue
 			}
 			ports, missing := rulePorts(rule.Ports, port, dst)
-			unresolved = append(unresolved, missing...)
-			if len(ports) == 0 {
-				continue
+			s.unresolved = append(s.unresolved, missing...)
+			if len(ports) > 0 {
+				s.ports = append(s.ports, ports...)
+				s.allowedBy = append(s.allowedBy, p.Namespace+"/"+p.Name)
 			}
-			allowed = append(allowed, ports...)
-			matched = append(matched, fmt.Sprintf("%s/%s", p.Namespace, p.Name))
 		}
 	}
-	if len(allowed) == 0 {
-		return false, nil, fmt.Sprintf("dst isolated for ingress by %s; no rule allows src%s", policyNames(isolating), unresolvedNote(unresolved))
-	}
-	return true, allowed, fmt.Sprintf("ingress allowed by %s", strings.Join(unique(matched), ", "))
+	return s
 }
 
 func policyNames(ps []networkingv1.NetworkPolicy) string {
@@ -658,31 +654,38 @@ func peersMatch(ctx evalContext, peers []networkingv1.NetworkPolicyPeer, pod cor
 // ports (that is what the spec matches it on, for ingress and egress alike);
 // a name no container declares is kept verbatim so it stays visible.
 // rulePorts resolves a rule's ports against the destination pod and keeps
-// those passing the filter ("*" = any). A named port no container of dst
-// declares matches no traffic, as in Kubernetes; its name is returned in
-// unresolved so the verdict can say why the rule did not apply.
+// the entries that open the filtered port (0 = any). Protocol defaults to
+// TCP and endPort gives a range, as in the API. A named port no container
+// of dst declares matches no traffic, as in Kubernetes; its name is returned
+// in unresolved so the verdict can say why the rule did not apply.
 func rulePorts(ports []networkingv1.NetworkPolicyPort, filter int32, dst corev1.Pod) (out, unresolved []string) {
 	if len(ports) == 0 {
 		return []string{"*"}, nil
 	}
 	out = []string{}
 	for _, p := range ports {
-		if p.Port == nil {
-			out = append(out, "*")
-			continue
+		spec := portSpec{proto: "TCP"}
+		if p.Protocol != nil {
+			spec.proto = string(*p.Protocol)
 		}
-		pv := int32(p.Port.IntValue())
-		if p.Port.Type == intstr.String {
-			pv = containerPortByName(dst, p.Port.StrVal)
-			if pv == 0 {
-				unresolved = append(unresolved, p.Port.StrVal)
-				continue
+		if p.Port != nil {
+			spec.lo = int32(p.Port.IntValue())
+			if p.Port.Type == intstr.String {
+				spec.lo = containerPortByName(dst, p.Port.StrVal)
+				if spec.lo == 0 {
+					unresolved = append(unresolved, p.Port.StrVal)
+					continue
+				}
+			}
+			spec.hi = spec.lo
+			if p.EndPort != nil {
+				spec.hi = *p.EndPort
 			}
 		}
-		if filter != 0 && pv != filter {
+		if filter != 0 && !spec.covers(filter, "") {
 			continue
 		}
-		out = append(out, strconv.Itoa(int(pv)))
+		out = append(out, spec.String())
 	}
 	return out, unresolved
 }
@@ -706,33 +709,4 @@ func containerPortByName(pod corev1.Pod, name string) int32 {
 		}
 	}
 	return 0
-}
-
-func intersectPorts(a, b []string) []string {
-	if contains(a, "*") {
-		return b
-	}
-	if contains(b, "*") {
-		return a
-	}
-	seen := map[string]bool{}
-	for _, x := range a {
-		seen[x] = true
-	}
-	out := []string{}
-	for _, x := range b {
-		if seen[x] {
-			out = append(out, x)
-		}
-	}
-	return out
-}
-
-func contains(s []string, x string) bool {
-	for _, v := range s {
-		if v == x {
-			return true
-		}
-	}
-	return false
 }

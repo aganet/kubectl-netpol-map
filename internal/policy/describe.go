@@ -88,8 +88,8 @@ func Describe(snap *Snapshot) ([]PolicyView, Coverage) {
 		}
 		for _, p := range append(append([]unstructured.Unstructured{}, ctx.cnps...), ctx.ccnps...) {
 			if selectsForCilium(ctx, p, rep) {
-				in = in || policyHasSection(p, "ingress")
-				out = out || policyHasSection(p, "egress")
+				in = in || ciliumIsolates(p, "ingress")
+				out = out || ciliumIsolates(p, "egress")
 			}
 		}
 		if in {
@@ -214,8 +214,8 @@ func describeCilium(ctx evalContext, p unstructured.Unstructured, workloads []Wo
 	v := PolicyView{
 		Key: p.GetKind() + "/" + ciliumPolicyKey(p), Kind: p.GetKind(),
 		Namespace: p.GetNamespace(), Name: p.GetName(),
-		IsolatesIngress: !isRejected && policyHasSection(p, "ingress"),
-		IsolatesEgress:  !isRejected && policyHasSection(p, "egress"),
+		IsolatesIngress: !isRejected && ciliumIsolates(p, "ingress"),
+		IsolatesEgress:  !isRejected && ciliumIsolates(p, "egress"),
 		Ingress:         []RuleView{}, Egress: []RuleView{},
 	}
 	v.Rejected = rejected
@@ -245,7 +245,7 @@ func describeCilium(ctx evalContext, p unstructured.Unstructured, workloads []Wo
 				continue
 			}
 			rv := RuleView{Deny: strings.HasSuffix(key, "Deny"), Ports: ciliumPorts(rule), Peers: []PeerView{}}
-			rv.L7, _ = ruleHasL7(rule)
+			rv.L7 = ruleHasL7(rule)
 			eps, _, _ := unstructured.NestedSlice(rule, dir+"Endpoints")
 			rv.Peers = append(rv.Peers, endpointPeers(eps)...)
 			for _, e := range stringList(rule, dir+"Entities") {

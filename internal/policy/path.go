@@ -33,9 +33,13 @@ type PathResult struct {
 	// TargetPort is the pod port the NetworkPolicy layer was evaluated at
 	// (0 = any). It differs from Port when the Service maps port → targetPort.
 	TargetPort int32
-	Layers     []Layer
-	Cell       Cell // NetworkPolicy verdict across all pairs
-	PerPair    []Pair
+	// Protocol is the Service port's protocol when the destination is a
+	// single Service port; rules opening the port on another protocol then
+	// do not count.
+	Protocol string
+	Layers   []Layer
+	Cell     Cell // NetworkPolicy verdict across all pairs
+	PerPair  []Pair
 }
 
 // ServiceHop is the Service the destination resolved through.
@@ -194,6 +198,7 @@ func ExplainPath(snap *Snapshot, defaultNS, srcRef, dstRef, port string) (*PathR
 
 	res.DstPods = podNames(dstPods)
 	res.Cell, res.PerPair = evaluatePods(ctx, srcPods, dstPods, res.TargetPort)
+	res.Cell, res.PerPair = restrictProtocol(res.Cell, res.PerPair, res.TargetPort, res.Protocol)
 	res.Layers = append(res.Layers, policyLayer(res.Cell, res.suggestRule()), meshLayer(snap, srcPods, dstPods, res.TargetPort))
 	return res, nil
 }
@@ -259,9 +264,9 @@ func (r *PathResult) walkService(ctx evalContext, snap *Snapshot, srcPods []core
 	if len(dstPods) == 0 {
 		dstPods = matched
 	}
-	portLayer, target := resolveServicePort(svc, dstPods, r.Port)
+	portLayer, target, proto := resolveServicePort(svc, dstPods, r.Port)
 	r.Layers = append(r.Layers, portLayer)
-	r.TargetPort = target
+	r.TargetPort, r.Protocol = target, proto
 	return dstPods
 }
 
@@ -321,7 +326,7 @@ func dnsLayer(svc *corev1.Service) Layer {
 // was asked) to the pod port, checking named targetPorts against the pods'
 // declared container ports. Returns the pod port to evaluate policy at, or
 // 0 when it is not a single number.
-func resolveServicePort(svc *corev1.Service, pods []corev1.Pod, want string) (Layer, int32) {
+func resolveServicePort(svc *corev1.Service, pods []corev1.Pod, want string) (Layer, int32, string) {
 	exposed := make([]string, 0, len(svc.Spec.Ports))
 	for _, sp := range svc.Spec.Ports {
 		exposed = append(exposed, servicePortText(sp))
@@ -338,11 +343,11 @@ func resolveServicePort(svc *corev1.Service, pods []corev1.Pod, want string) (La
 			return Layer{Name: "Port", Status: LayerFail,
 				Summary: fmt.Sprintf("port %s is not exposed by Service %s/%s (exposes %s)", want, svc.Namespace, svc.Name, strings.Join(exposed, ", ")),
 				Fix:     "connect to one of the exposed ports, or add port " + want + " to the Service",
-			}, 0
+			}, 0, ""
 		}
 	}
 	if len(chosen) == 0 {
-		return Layer{Name: "Port", Status: LayerWarn, Summary: "Service exposes no ports"}, 0
+		return Layer{Name: "Port", Status: LayerWarn, Summary: "Service exposes no ports"}, 0, ""
 	}
 
 	l := Layer{Name: "Port", Status: LayerPass}
@@ -398,11 +403,35 @@ func resolveServicePort(svc *corev1.Service, pods []corev1.Pod, want string) (La
 	}
 	l.Summary, l.Detail = lines[0], lines[1:]
 	if len(chosen) == 1 && len(targets) == 1 {
+		proto := string(chosen[0].Protocol)
+		if proto == "" {
+			proto = "TCP"
+		}
 		for n := range targets {
-			return l, n
+			return l, n, proto
 		}
 	}
-	return l, 0
+	return l, 0, ""
+}
+
+// restrictProtocol turns an ALLOW that opens the port only on other
+// protocols into a DENY: a UDP Service is not reachable through a TCP rule.
+func restrictProtocol(c Cell, pairs []Pair, port int32, proto string) (Cell, []Pair) {
+	if proto == "" || port == 0 {
+		return c, pairs
+	}
+	deny := func(ports []string, reason string) string {
+		return fmt.Sprintf("port %d is opened only on %s, the Service port is %s — %s", port, strings.Join(DisplayPorts(ports), ","), proto, reason)
+	}
+	if c.Allowed && !portsCover(c.Ports, port, proto) {
+		c = Cell{Allowed: false, PolicyApplied: true, Reason: deny(c.Ports, c.Reason), DeniedPairs: c.AllowedPairs + c.DeniedPairs}
+	}
+	for i, p := range pairs {
+		if p.Allowed && !portsCover(p.Ports, port, proto) {
+			pairs[i] = Pair{Src: p.Src, Dst: p.Dst, Reason: deny(p.Ports, p.Reason)}
+		}
+	}
+	return c, pairs
 }
 
 func servicePortText(sp corev1.ServicePort) string {
@@ -785,9 +814,9 @@ func (r *PathResult) suggestRule() string {
 		return ""
 	}
 	if r.Cell.Unknown {
-		return "the source is isolated and only an L7/FQDN/CIDR rule could permit this edge, which this tool\n" +
-			"  does not evaluate. Inspect the Cilium policy's toFQDNs/toEntities/toCIDR rules, or verify\n" +
-			"  with Hubble flow logs, before concluding the edge is blocked."
+		return "the source is isolated and only a rule this tool cannot decide could permit this edge:\n" +
+			"  an unresolved or wildcard toFQDNs (try --resolve-fqdn), toServices or toRequires/fromRequires.\n" +
+			"  Inspect that rule, or verify with Hubble flow logs, before concluding the edge is blocked."
 	}
 	dstNS := ""
 	if len(r.DstPods) > 0 {

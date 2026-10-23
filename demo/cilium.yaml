@@ -3,11 +3,18 @@
 #
 #   - DNS-aware egress: the worker may reach api.stripe.com and *.amazonaws.com
 #     only, with a DNS L7 rule so Cilium can learn the IPs
-#   - an explicit cluster-wide deny of the cloud metadata endpoint
+#   - an explicit cluster-wide deny of the cloud metadata endpoint, without
+#     putting every pod into default-deny (a deny-only policy does that too,
+#     unless enableDefaultDeny says otherwise)
 #
-# Expected verdicts (Cilium cluster):
-#   shop/worker -> api.stripe.com:443 --resolve-fqdn   REACHABLE
-#   shop/worker -> internet                            REACHABLE with caveats (only the listed names are opened)
+# Cilium enforces these together with demo.yaml's standard policies from one
+# pool: a rule of either kind opens traffic. worker-egress already opens
+# 443 to any public address, so the FQDN rule adds names, it does not
+# restrict them; remove worker-egress to see the names-only behaviour.
+#
+# Expected verdicts (Cilium cluster, with demo.yaml applied):
+#   shop/worker -> api.stripe.com:443 --resolve-fqdn   REACHABLE (toFQDNs and worker-egress)
+#   shop/worker -> example.com:443    --resolve-fqdn   REACHABLE (worker-egress ipBlock)
 #   any pod     -> 169.254.169.254                     BLOCKED at Egress policy (egressDeny)
 ---
 apiVersion: cilium.io/v2
@@ -45,6 +52,9 @@ metadata:
   name: deny-cloud-metadata
 spec:
   endpointSelector: {}
+  enableDefaultDeny:
+    egress: false
+    ingress: false
   egressDeny:
     - toCIDR:
         - 169.254.169.254/32

@@ -2,7 +2,7 @@ package policy
 
 import (
 	"fmt"
-	"sort"
+	"strconv"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -12,152 +12,62 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-// ciliumVerdict captures what Cilium policies imply for one edge, kept
-// separate from the standard NP verdict so we can compose them at decision
-// time.
+// ciliumVerdict is what the Cilium policies say about one pair: an
+// explicit deny, which wins over everything, or what they isolate and
+// open in each direction, to be unioned with the standard policies.
 type ciliumVerdict struct {
-	// HasPolicy is true if at least one Cilium policy applies to src or dst
-	// (i.e., this edge falls under some Cilium endpointSelector). When false
-	// the Cilium layer is silent — only the standard NP verdict matters.
-	HasPolicy bool
-	// Allowed is true when an applicable Cilium policy permits the edge
-	// (or no applicable policy denies it).
-	Allowed bool
-	// Denied is true when a Cilium deny rule (ingressDeny/egressDeny) matches.
-	// Deny overrides any allow on the same edge.
-	Denied bool
-	// Ports is the union of allowed Cilium ports for this edge (empty = all).
-	Ports []string
-	// Reason describes the Cilium-side decision in one line.
-	Reason string
-	// Skipped is the count of rules that referenced features we don't
-	// evaluate (HTTP, DNS, FQDN, toEntities, toServices). Surfaced to the
-	// user so they know the verdict is L4-only.
-	Skipped int
-	// Uncertain is true when this verdict is a deny that rests on incomplete
-	// information: the endpoint is isolated, no evaluated rule matched, but
-	// one or more skipped (L7/FQDN/entity/CIDR) rules might have allowed the
-	// edge. The caller should surface this as UNKNOWN, not DENY.
-	Uncertain bool
-	// L7Restricted is true when the edge is allowed at L4 but the matching
-	// allow rule also carries L7 conditions this engine does not evaluate.
-	L7Restricted bool
+	Denied  bool
+	Reason  string // for Denied
+	Egress  side
+	Ingress side
 }
 
-// evaluateCilium decides what the Cilium layer says about src→dst.
-// Both namespaced CNPs and cluster-wide CCNPs are considered.
-func evaluateCilium(
-	ctx evalContext,
-	src, dst corev1.Pod,
-	port int32,
-) ciliumVerdict {
-	cnps := ctx.cnps
-	ccnps := ctx.ccnps
-	v := ciliumVerdict{Allowed: true} // optimistic until proven otherwise
-
-	// All applicable policies (CNPs filtered by namespace, CCNPs always).
+// evaluateCilium reads the namespaced and cluster-wide Cilium policies that
+// select src or dst.
+func evaluateCilium(ctx evalContext, src, dst corev1.Pod, port int32) ciliumVerdict {
 	applicable := []unstructured.Unstructured{}
-	for _, p := range cnps {
+	for _, p := range ctx.cnps {
 		if p.GetNamespace() == src.Namespace || p.GetNamespace() == dst.Namespace {
 			applicable = append(applicable, p)
 		}
 	}
-	applicable = append(applicable, ccnps...)
+	applicable = append(applicable, ctx.ccnps...)
 
-	// Pass 1: explicit denies always win.
+	var v ciliumVerdict
 	for _, p := range applicable {
 		if selectsForCilium(ctx, p, src) {
-			if matched, skipped := ruleMatchesEgress(ctx, p, src, dst, port, "egressDeny"); matched {
-				v.Denied = true
-				v.HasPolicy = true
-				v.Reason = fmt.Sprintf("egress denied by %s (egressDeny)", ciliumPolicyKey(p))
-				v.Skipped += skipped
-				return v
+			if matched, _ := ruleMatchesEgress(ctx, p, src, dst, port, "egressDeny"); matched {
+				return ciliumVerdict{Denied: true, Reason: fmt.Sprintf("egress denied by %s (egressDeny)", ciliumPolicyKey(p))}
 			}
 		}
 		if selectsForCilium(ctx, p, dst) {
-			if matched, skipped := ruleMatchesIngress(ctx, p, src, dst, port, "ingressDeny"); matched {
-				v.Denied = true
-				v.HasPolicy = true
-				v.Reason = fmt.Sprintf("ingress denied by %s (ingressDeny)", ciliumPolicyKey(p))
-				v.Skipped += skipped
-				return v
+			if matched, _ := ruleMatchesIngress(ctx, p, src, dst, port, "ingressDeny"); matched {
+				return ciliumVerdict{Denied: true, Reason: fmt.Sprintf("ingress denied by %s (ingressDeny)", ciliumPolicyKey(p))}
 			}
 		}
 	}
-
-	// Pass 2: allow rules. Cilium semantics — if any policy selects the
-	// endpoint for a direction, that direction becomes isolated and only an
-	// explicit allow rule lets traffic through.
-	srcIsolated := false
-	dstIsolated := false
-	srcAllowed := false
-	dstAllowed := false
-	allowReasons := []string{}
-	portSet := map[string]bool{}
-
 	for _, p := range applicable {
-		if selectsForCilium(ctx, p, src) && policyHasSection(p, "egress") {
-			srcIsolated = true
-			v.HasPolicy = true
+		if selectsForCilium(ctx, p, src) && ciliumIsolates(p, "egress") {
+			v.Egress.isolated = true
+			v.Egress.isolatedBy = append(v.Egress.isolatedBy, ciliumPolicyKey(p))
 			matched, ports, skipped, l7 := ruleMatchesEgressWithPorts(ctx, p, src, dst, port, "egress")
-			v.Skipped += skipped
+			v.Egress.skipped += skipped
 			if matched {
-				srcAllowed = true
-				if l7 {
-					v.L7Restricted = true
-				}
-				allowReasons = append(allowReasons, "egress: "+ciliumPolicyKey(p))
-				for _, pp := range ports {
-					portSet[pp] = true
-				}
+				v.Egress.ports = append(v.Egress.ports, ports...)
+				v.Egress.allowedBy = append(v.Egress.allowedBy, ciliumPolicyKey(p))
+				v.Egress.l7 = v.Egress.l7 || l7
 			}
 		}
-		if selectsForCilium(ctx, p, dst) && policyHasSection(p, "ingress") {
-			dstIsolated = true
-			v.HasPolicy = true
+		if selectsForCilium(ctx, p, dst) && ciliumIsolates(p, "ingress") {
+			v.Ingress.isolated = true
+			v.Ingress.isolatedBy = append(v.Ingress.isolatedBy, ciliumPolicyKey(p))
 			matched, ports, skipped, l7 := ruleMatchesIngressWithPorts(ctx, p, src, dst, port, "ingress")
-			v.Skipped += skipped
+			v.Ingress.skipped += skipped
 			if matched {
-				dstAllowed = true
-				if l7 {
-					v.L7Restricted = true
-				}
-				allowReasons = append(allowReasons, "ingress: "+ciliumPolicyKey(p))
-				for _, pp := range ports {
-					portSet[pp] = true
-				}
+				v.Ingress.ports = append(v.Ingress.ports, ports...)
+				v.Ingress.allowedBy = append(v.Ingress.allowedBy, ciliumPolicyKey(p))
+				v.Ingress.l7 = v.Ingress.l7 || l7
 			}
-		}
-	}
-
-	if srcIsolated && !srcAllowed {
-		v.Allowed = false
-		if v.Skipped > 0 {
-			v.Uncertain = true
-			v.Reason = fmt.Sprintf("Cilium: src isolated for egress; no evaluated rule matches dst, but %d L7/FQDN/CIDR rule(s) were not evaluated", v.Skipped)
-		} else {
-			v.Reason = "Cilium: src isolated for egress; no Cilium rule matches dst"
-		}
-		return v
-	}
-	if dstIsolated && !dstAllowed {
-		v.Allowed = false
-		if v.Skipped > 0 {
-			v.Uncertain = true
-			v.Reason = fmt.Sprintf("Cilium: dst isolated for ingress; no evaluated rule allows src, but %d L7/FQDN/CIDR rule(s) were not evaluated", v.Skipped)
-		} else {
-			v.Reason = "Cilium: dst isolated for ingress; no Cilium rule allows src"
-		}
-		return v
-	}
-
-	if v.HasPolicy {
-		v.Ports = sortedKeys(portSet)
-		if len(allowReasons) > 0 {
-			v.Reason = "Cilium " + strings.Join(allowReasons, "; ")
-		} else {
-			v.Reason = "Cilium: no policy restricts this edge"
 		}
 	}
 	return v
@@ -311,6 +221,17 @@ func policyHasSection(p unstructured.Unstructured, key string) bool {
 	return found && len(list) > 0
 }
 
+// ciliumIsolates reports whether the policy puts the endpoints it selects
+// into default-deny for dir ("ingress" or "egress"). Any rule in that
+// direction counts, deny rules included (a policy with only egressDeny
+// still isolates egress), unless spec.enableDefaultDeny.<dir> is false.
+func ciliumIsolates(p unstructured.Unstructured, dir string) bool {
+	if enabled, found, _ := unstructured.NestedBool(p.Object, "spec", "enableDefaultDeny", dir); found && !enabled {
+		return false
+	}
+	return policyHasSection(p, dir) || policyHasSection(p, dir+"Deny")
+}
+
 // ruleMatchesIngress returns true if any rule in spec.<key> permits traffic
 // from src to dst (used for "ingress" and "ingressDeny" variants).
 func ruleMatchesIngress(ctx evalContext, p unstructured.Unstructured, src, dst corev1.Pod, port int32, key string) (bool, int) {
@@ -404,7 +325,7 @@ func matchIngressPeers(ctx evalContext, rule map[string]interface{}, src corev1.
 // matchRules walks spec.<key> and returns the first rule whose peers and
 // ports cover the pair. L7 conditions on a matching rule are reported, not
 // evaluated; rules that could not be decided are counted in skipped.
-func matchRules(rules []interface{}, port int32, peers func(map[string]interface{}) peerMatch) (matched bool, ports []string, skipped int, l7 bool) {
+func matchRules(rules []interface{}, port int32, dst corev1.Pod, peers func(map[string]interface{}) peerMatch) (matched bool, ports []string, skipped int, l7 bool) {
 	for _, r := range rules {
 		rule, ok := r.(map[string]interface{})
 		if !ok {
@@ -417,26 +338,25 @@ func matchRules(rules []interface{}, port int32, peers func(map[string]interface
 			}
 			continue
 		}
-		rulePorts, portsMatch, skippedPorts := evaluateToPorts(rule, port)
+		rulePorts, portsMatch := evaluateToPorts(rule, port, dst)
 		if !portsMatch {
 			continue
 		}
-		_, hasL7 := ruleHasL7(rule)
-		return true, rulePorts, skipped + skippedPorts, hasL7
+		return true, rulePorts, skipped, ruleHasL7(rule)
 	}
 	return false, nil, skipped, false
 }
 
 func ruleMatchesIngressWithPorts(ctx evalContext, p unstructured.Unstructured, src, dst corev1.Pod, port int32, key string) (bool, []string, int, bool) {
 	rules, _, _ := unstructured.NestedSlice(p.Object, "spec", key)
-	return matchRules(rules, port, func(rule map[string]interface{}) peerMatch {
+	return matchRules(rules, port, dst, func(rule map[string]interface{}) peerMatch {
 		return matchIngressPeers(ctx, rule, src, p.GetNamespace())
 	})
 }
 
 func ruleMatchesEgressWithPorts(ctx evalContext, p unstructured.Unstructured, src, dst corev1.Pod, port int32, key string) (bool, []string, int, bool) {
 	rules, _, _ := unstructured.NestedSlice(p.Object, "spec", key)
-	return matchRules(rules, port, func(rule map[string]interface{}) peerMatch { return matchEgressPeers(ctx, rule, dst, p.GetNamespace()) })
+	return matchRules(rules, port, dst, func(rule map[string]interface{}) peerMatch { return matchEgressPeers(ctx, rule, dst, p.GetNamespace()) })
 }
 
 // anyEndpointMatches reports whether a fromEndpoints/toEndpoints list covers
@@ -459,27 +379,24 @@ func anyEndpointMatches(ctx evalContext, peers []interface{}, pod corev1.Pod, po
 	return false
 }
 
-// evaluateToPorts inspects rule.toPorts. Returns the matching port strings
-// (e.g. "80", "5432"), whether the port filter matched, and how many port
-// blocks were skipped because of unsupported features (e.g. http/dns rules).
-func evaluateToPorts(rule map[string]interface{}, filter int32) ([]string, bool, int) {
-	blocks, found, _ := unstructured.NestedSlice(rule, "toPorts")
-	if !found || len(blocks) == 0 {
-		return []string{"*"}, true, 0
+// evaluateToPorts reads what a rule opens at L4 and whether that covers the
+// filtered port (0 = any). Cilium's protocol defaults to ANY, endPort gives
+// a range, a named port resolves against dst and matches nothing when no
+// container declares it, and a rule with only icmps opens no L4 port.
+func evaluateToPorts(rule map[string]interface{}, filter int32, dst corev1.Pod) ([]string, bool) {
+	blocks, _, _ := unstructured.NestedSlice(rule, "toPorts")
+	_, hasICMP, _ := unstructured.NestedSlice(rule, "icmps")
+	if len(blocks) == 0 && !hasICMP {
+		return []string{"*"}, true
 	}
-	skipped := 0
 	out := []string{}
-	matched := false
+	if hasICMP {
+		out = append(out, "ICMP")
+	}
 	for _, raw := range blocks {
 		block, ok := raw.(map[string]interface{})
 		if !ok {
 			continue
-		}
-		if _, hasHTTP, _ := unstructured.NestedSlice(block, "rules", "http"); hasHTTP {
-			skipped++
-		}
-		if _, hasDNS, _ := unstructured.NestedSlice(block, "rules", "dns"); hasDNS {
-			skipped++
 		}
 		ports, _, _ := unstructured.NestedSlice(block, "ports")
 		for _, praw := range ports {
@@ -488,26 +405,43 @@ func evaluateToPorts(rule map[string]interface{}, filter int32) ([]string, bool,
 				continue
 			}
 			portStr, _, _ := unstructured.NestedString(pm, "port")
-			if portStr == "" {
+			spec := portSpec{proto: "ANY"}
+			if proto, _, _ := unstructured.NestedString(pm, "protocol"); proto != "" {
+				spec.proto = strings.ToUpper(proto)
+			}
+			if n, err := strconv.Atoi(portStr); err == nil {
+				spec.lo = int32(n)
+			} else if portStr != "" {
+				spec.lo = containerPortByName(dst, portStr)
+				if spec.lo == 0 {
+					continue
+				}
+			}
+			spec.hi = spec.lo
+			if end, found, _ := unstructured.NestedInt64(pm, "endPort"); found && end > 0 {
+				spec.hi = int32(end)
+			}
+			if filter != 0 && !spec.covers(filter, "") {
 				continue
 			}
-			if filter != 0 && portStr != intToStr(filter) {
-				continue
-			}
-			out = append(out, portStr)
-			matched = true
+			out = append(out, spec.String())
 		}
 	}
-	if !matched {
-		return nil, false, skipped
+	if filter != 0 {
+		return out, portsCover(out, filter, "")
 	}
-	return out, true, skipped
+	for _, s := range out {
+		if s != "ICMP" {
+			return out, true
+		}
+	}
+	return out, false
 }
 
 // ruleHasL7 detects rules that reference Layer 7 features so we can flag
 // (not evaluate) them — they apply on top of L4 in real Cilium, but our
 // engine only handles L4.
-func ruleHasL7(rule map[string]interface{}) (bool, bool) {
+func ruleHasL7(rule map[string]interface{}) bool {
 	blocks, _, _ := unstructured.NestedSlice(rule, "toPorts")
 	for _, raw := range blocks {
 		block, ok := raw.(map[string]interface{})
@@ -516,10 +450,10 @@ func ruleHasL7(rule map[string]interface{}) (bool, bool) {
 		}
 		rules, found, _ := unstructured.NestedMap(block, "rules")
 		if found && len(rules) > 0 {
-			return true, true
+			return true
 		}
 	}
-	return false, false
+	return false
 }
 
 func hasFields(m map[string]interface{}, fields ...string) bool {
@@ -549,17 +483,4 @@ func normalizeStringMap(in map[string]interface{}) map[string]string {
 		}
 	}
 	return out
-}
-
-func sortedKeys(m map[string]bool) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
-
-func intToStr(i int32) string {
-	return fmt.Sprintf("%d", i)
 }

@@ -79,14 +79,14 @@ func portSuffix(ports []string) string {
 	if len(ports) == 0 || (len(ports) == 1 && ports[0] == "*") {
 		return ""
 	}
-	return " :" + strings.Join(ports, ",")
+	return " :" + strings.Join(policy.DisplayPorts(ports), ",")
 }
 
 func portsWord(ports []string) string {
 	if len(ports) == 0 || (len(ports) == 1 && ports[0] == "*") {
 		return "all ports"
 	}
-	return strings.Join(ports, ",")
+	return strings.Join(policy.DisplayPorts(ports), ",")
 }
 
 // DiffJSON emits the diff as JSON. CI gates can fail on a non-empty

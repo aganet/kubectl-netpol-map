@@ -181,7 +181,7 @@ func printCiliumPolicies(w io.Writer, m *policy.Matrix) {
 		return
 	}
 	fmt.Fprintln(w, text.FgGreen.Sprint("  ✓ L4 reachability is evaluated (matchLabels + toPorts + ingressDeny/egressDeny)."))
-	fmt.Fprintln(w, text.FgYellow.Sprint("    L7 features (HTTP, DNS, FQDN, toEntities, toServices) are flagged but not evaluated."))
+	fmt.Fprintln(w, text.FgYellow.Sprint("    L7 conditions (HTTP, DNS) are flagged, not evaluated; unresolved FQDNs, toServices and *Requires give UNKNOWN."))
 	for _, p := range m.CiliumPolicies {
 		fmt.Fprintf(w, "  • %s/%s   kind=CiliumNetworkPolicy   %s\n",
 			p.GetNamespace(), p.GetName(),
@@ -624,7 +624,7 @@ func allCellsAllow(m *policy.Matrix, rows, cols []policy.Axis) bool {
 func printLegend(w io.Writer, opts Options) {
 	unknown := color.New(color.FgHiYellow).Sprint("UNKNOWN")
 	if !opts.Verbose {
-		fmt.Fprintln(w, text.Faint.Sprintf("Legend: %s = allowed   %s = blocked   %s = mixed   %s = could not evaluate (L7/FQDN/CIDR)",
+		fmt.Fprintln(w, text.Faint.Sprintf("Legend: %s = allowed   %s = blocked   %s = mixed   %s = could not be decided (unresolved FQDN, toServices, *Requires)",
 			color.GreenString("ALLOW"), color.RedString("DENY"), color.YellowString("PARTIAL"), unknown))
 		return
 	}

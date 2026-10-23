@@ -99,8 +99,11 @@ any pair, `/` filter, `d` denied, `r` refresh, `?` help. Mouse works.
 
 ## How it decides
 
-Per pod pair: egress allowed at the source, ingress at the destination, by both
-engines, on a shared port; workloads aggregate to `ALLOW`, `DENY`, `PARTIAL`.
+Per pod pair: egress allowed at the source, ingress at the destination, on a
+shared port; workloads aggregate to `ALLOW`, `DENY`, `PARTIAL`. On a Cilium
+cluster both policy kinds are enforced from one pool, as Cilium does: a
+direction is isolated when any policy of either kind isolates it, opened by
+a rule of either kind, and closed by a Cilium deny rule.
 Anything that depends on a rule the engine can't evaluate (Cilium L7,
 unresolved FQDN, CIDR, entity) is `UNKNOWN`, never a false `DENY`.
 
@@ -109,19 +112,24 @@ and `matchExpressions`, with Cilium's namespace, namespace-label and
 service-account labels; a CNP peer without a namespace key stays in its own
 namespace), `toEntities`/`fromEntities` (`cluster` and `all` match pods; `world`,
 `host`, `remote-node`, `kube-apiserver` and the others do not), and
-`toFQDNs` (a pod matches only if a name resolves to its IP; names that all
-resolve elsewhere are a decided non-match; unresolved names and wildcard
-patterns are UNKNOWN) are evaluated. `toCIDR`/`fromCIDR` apply only outside
+`toFQDNs` (a pod matches only if a name resolves to its IP; names that
+resolve elsewhere, and names or patterns outside the cluster DNS domain
+`cluster.local`, are a decided non-match; an unresolved name or a pattern
+inside that domain is UNKNOWN) are evaluated. `toCIDR`/`fromCIDR` apply only outside
 the cluster in Cilium and never match a pod. L7 (HTTP/DNS) conditions are not
 evaluated: a rule whose L4 part matches is shown as `ALLOW (L7)`. Selector
 lists within one rule allow independently; `toRequires`/`fromRequires` and
-`toServices` are not evaluated and make the verdict UNKNOWN. A policy Cilium
+`toServices` are not evaluated and make the verdict UNKNOWN. Any rule in a
+direction isolates the selected pods, deny-only rules included, unless
+`enableDefaultDeny` turns that off. A policy Cilium
 rejected (`VALID` false in `kubectl get cnp`) is listed as not enforced, flagged
 by lint `L006`, and ignored by every verdict, which is what the cluster does.
 
-Not evaluated: Cilium `toNodes`, ICMP, host policies,
-`endPort` ranges, protocols; `AdminNetworkPolicy`; Calico and Antrea
-policies. `path` is static: it reads objects, sends no packets, assumes
+Ports carry their protocol and `endPort` range in both engines; a rule on
+the wrong protocol or a named port the pod does not declare opens nothing.
+Not evaluated: Cilium `toNodes`, host policies, ICMP conditions (an
+`icmps`-only rule opens no TCP/UDP port); `AdminNetworkPolicy`; Calico and
+Antrea policies. `path` is static: it reads objects, sends no packets, assumes
 CoreDNS in `kube-system` and outbound NAT. FQDN resolution uses the DNS of
 the machine running the tool, which can differ from the cluster's.
 

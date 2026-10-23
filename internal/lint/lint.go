@@ -224,7 +224,7 @@ func ruleL005StandardCiliumOverlap(snap *policy.Snapshot) []Finding {
 					Severity: SevInfo,
 					Subject:  fmt.Sprintf("%s ⇄ %s/%s (CNP)", policyKey(std), cnp.GetNamespace(), cnp.GetName()),
 					Message:  "standard NetworkPolicy and CiliumNetworkPolicy select overlapping pods",
-					Hint:     "verify combined semantics: both engines must allow traffic for it to pass",
+					Hint:     "Cilium enforces both from one pool: a rule of either kind opens traffic, a deny rule closes it",
 				})
 			}
 		}

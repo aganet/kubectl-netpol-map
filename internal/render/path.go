@@ -54,7 +54,7 @@ func Path(w io.Writer, r *policy.PathResult) error {
 			case !p.Allowed:
 				v = color.RedString("DENY")
 			case len(p.Ports) > 0 && !(len(p.Ports) == 1 && p.Ports[0] == "*"):
-				v = color.GreenString("ALLOW :" + strings.Join(p.Ports, ","))
+				v = color.GreenString("ALLOW :" + strings.Join(policy.DisplayPorts(p.Ports), ","))
 			default:
 				v = color.GreenString("ALLOW")
 			}
@@ -149,14 +149,14 @@ func PathJSON(w io.Writer, r *policy.PathResult) error {
 		Src: r.SrcRef, Dst: r.DstRef, Port: r.Port, TargetPort: r.TargetPort,
 		Verdict: r.Verdict(), Status: string(r.Status()), Service: r.Service, External: r.External,
 		Allowed: r.Cell.Allowed, Partial: r.Cell.Partial, Unknown: r.Cell.Unknown,
-		Ports: r.Cell.Ports, Reason: r.Cell.Reason,
+		Ports: policy.DisplayPorts(r.Cell.Ports), Reason: r.Cell.Reason,
 		SrcPods: r.SrcPods, DstPods: r.DstPods,
 	}
 	for _, l := range r.Layers {
 		o.Layers = append(o.Layers, layer{l.Name, string(l.Status), l.Summary, l.Detail, l.Fix})
 	}
 	for _, p := range r.PerPair {
-		o.Pairs = append(o.Pairs, pair{p.Src, p.Dst, p.Allowed, p.Unknown, p.Ports, p.Reason})
+		o.Pairs = append(o.Pairs, pair{p.Src, p.Dst, p.Allowed, p.Unknown, policy.DisplayPorts(p.Ports), p.Reason})
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
