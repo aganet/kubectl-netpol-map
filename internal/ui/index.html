@@ -26,6 +26,7 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 var(--sans); }
   button, input { font: inherit; color: inherit; }
+  [hidden] { display: none !important; }
   code, .mono { font-family: var(--mono); font-size: 13px; }
   a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
   a:hover { filter: brightness(.85); }
@@ -45,7 +46,20 @@
   .pill.warn, .pill.unknown { color: var(--warn); background: var(--warn-soft); border-color: transparent; }
   .pill.fail { color: var(--fail); background: var(--fail-soft); border-color: transparent; }
   .pill.accent { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
-  .pill.click { cursor: pointer; }
+  .pill.click { cursor: pointer; transition: box-shadow .15s, background .15s, color .15s; }
+  .pill.click:hover { box-shadow: 0 0 0 3px var(--accent-soft); }
+  .pill.click:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .pill.click.active { color: var(--accent-fg); background: var(--accent); } .pill.click.active b { color: inherit; }
+  .pill.click.active.fail { background: var(--fail); } .pill.click.active.warn { background: var(--warn); } .pill.click.active.ok { background: var(--ok); }
+  .pill.click.active:hover { box-shadow: 0 0 0 3px var(--border-2); }
+  .pill .x { display: none; width: 13px; height: 13px; margin: 0 -3px 0 1px; } .pill.active .x { display: inline-block; }
+  .mapwrap { position: relative; }
+  .focusbar { position: absolute; bottom: 14px; left: 12px; z-index: 2; display: inline-flex; align-items: center; gap: 8px; padding: 5px 6px 5px 12px; border-radius: 999px; background: var(--panel); border: 1px solid var(--border-2); box-shadow: var(--shadow); font-size: 12px; color: var(--text); }
+  .focusbar .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); } .focusbar.fail .dot { background: var(--fail); }
+  .focusbar .mono { font-weight: 600; }
+  .focusbar kbd { font: 11px var(--mono); padding: 1px 5px; border: 1px solid var(--border-2); border-radius: 4px; color: var(--muted); }
+  .focusbar button { display: inline-flex; width: 22px; height: 22px; align-items: center; justify-content: center; border-radius: 50%; border: 0; background: var(--panel-2); cursor: pointer; color: var(--muted); }
+  .focusbar button:hover { background: var(--accent-soft); color: var(--accent); } .focusbar button svg { width: 12px; height: 12px; }
   .stats { color: var(--muted); font-size: 12px; white-space: nowrap; }
   .btn { display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border-2); background: var(--panel); cursor: pointer; transition: background .15s, border-color .15s; white-space: nowrap; }
   .btn:hover { background: var(--panel-2); border-color: var(--accent); }
@@ -126,15 +140,15 @@
   .map .node:hover rect, .map .node.focus rect { stroke: var(--accent); stroke-width: 2; }
   .map .node text { font-size: 14px; fill: var(--text); pointer-events: none; }
   .map .node .kind { font-size: 11px; fill: var(--muted); }
-  .map .edge { fill: none; stroke-width: 2.4; stroke-linejoin: round; stroke-linecap: round; cursor: pointer; }
-  .map .edge.allow { stroke: var(--edge-allow); } .map .edge.deny { stroke: var(--edge-deny); stroke-dasharray: 7 5; stroke-width: 1.6; opacity: .7; }
-  .map .edge.partial { stroke: var(--edge-warn); } .map .edge.unknown { stroke: var(--edge-warn); stroke-dasharray: 2 5; }
-  .map .edge.blocked { stroke: var(--edge-warn); stroke-dasharray: 7 5; }
-  .map .edge.rejected { stroke: var(--skip); stroke-dasharray: 3 5; } .map .stub.rejected { fill: var(--skip); }
-  .map .edge:hover, .map .edge.hl { stroke-width: 4; opacity: 1; }
-  .map .stub { rx: 2; pointer-events: none; }
-  .map .stub.allow { fill: var(--edge-allow); } .map .stub.deny { fill: var(--edge-deny); } .map .stub.blocked, .map .stub.partial, .map .stub.unknown { fill: var(--edge-warn); }
-  .map.focused .edge:not(.focus) { opacity: .08; } .map.focused .node:not(.focus) { opacity: .3; } .map.focused .stub { opacity: .25; }
+  .map .edge { fill: none; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; cursor: pointer; }
+  .map .edge.allow { color: var(--edge-allow); } .map .edge.deny { color: var(--edge-deny); stroke-dasharray: 6 5; stroke-width: 1.4; opacity: .7; }
+  .map .edge.partial { color: var(--edge-warn); } .map .edge.unknown { color: var(--edge-warn); stroke-dasharray: 2 5; }
+  .map .edge.blocked { color: var(--edge-warn); stroke-dasharray: 7 5; }
+  .map .edge.rejected { color: var(--skip); stroke-dasharray: 3 5; }
+  .map .edge { stroke: currentColor; } .map .edge .dot, .map .edge .head { fill: currentColor; stroke: none; }
+  .map .edge:hover, .map .edge.hl { stroke-width: 3; opacity: 1; }
+  .map .halo { fill: none; stroke: var(--map-bg); stroke-width: 4.5; stroke-linejoin: round; stroke-linecap: round; pointer-events: none; } .map.focused .halo { display: none; }
+  .map.focused .edge:not(.focus) { opacity: .08; } .map.focused .node:not(.focus) { opacity: .3; }
   .flows { margin-top: 12px; max-height: 40vh; overflow: auto; }
   .tip { position: fixed; z-index: 40; pointer-events: none; background: var(--panel); border: 1px solid var(--border-2); border-radius: 8px; padding: 8px 10px; box-shadow: var(--shadow); font-size: 12.5px; max-width: 460px; }
   .tip[hidden] { display: none; }
@@ -145,9 +159,11 @@
   .plist { max-height: 60vh; overflow: auto; padding: 8px; }
   .pitem { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
   .pitem:hover { background: var(--panel-2); } .pitem.active { border-color: var(--accent); background: var(--accent-soft); }
-  .pitem .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pitem .name { font-weight: 600; overflow-wrap: anywhere; }
+  .pitem:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   .pitem .meta { color: var(--muted); font-size: 12.5px; grid-column: 1 / -1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pitem .badges { display: flex; gap: 4px; }
+  .pitem .badges { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+  .finding .subjects { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; } .finding .subjects span { font-family: var(--mono); font-size: 11.5px; padding: 1px 6px; border-radius: 4px; background: var(--panel-2); }
   .detail { position: relative; min-height: 300px; background: var(--map-bg); background-image: radial-gradient(var(--grid) 1px, transparent 1px); background-size: 22px 22px; }
   .cols { display: grid; grid-template-columns: 1fr 1.15fr 1fr; gap: 64px; position: relative; z-index: 1; }
   .col h4 { margin: 0 0 10px; font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); display: flex; justify-content: space-between; }
@@ -168,7 +184,6 @@
   .connectors { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
   .connectors path { fill: none; stroke-width: 2.4; stroke-linejoin: round; }
   .connectors .allow { stroke: var(--edge-allow); } .connectors .deny { stroke: var(--edge-deny); stroke-dasharray: 7 5; }
-  .connectors .stub.allow { fill: var(--edge-allow); } .connectors .stub.deny { fill: var(--edge-deny); }
 
   /* trace */
   .form { display: grid; grid-template-columns: 1fr 44px 1fr; gap: 14px; align-items: stretch; }
@@ -203,7 +218,8 @@
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <symbol id="ico-ns" viewBox="0 0 24 24" fill="none" stroke="var(--ico)" stroke-width="1.9" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></symbol>
+  <symbol id="ico-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+<symbol id="ico-ns" viewBox="0 0 24 24" fill="none" stroke="var(--ico)" stroke-width="1.9" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></symbol>
   <symbol id="ico-globe" viewBox="0 0 24 24" fill="none" stroke="var(--ico)" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="3.8" ry="9"/><path d="M3 12h18M4.6 7.5h14.8M4.6 16.5h14.8"/></symbol>
   <symbol id="ico-cluster" viewBox="0 0 24 24" fill="var(--ico)"><circle cx="12" cy="12" r="2.3"/><circle cx="12" cy="4.5" r="2"/><circle cx="18.5" cy="8.2" r="2"/><circle cx="18.5" cy="15.8" r="2"/><circle cx="12" cy="19.5" r="2"/><circle cx="5.5" cy="15.8" r="2"/><circle cx="5.5" cy="8.2" r="2"/><path d="M12 7v3M15.5 9.5l-2 1.2M15.5 14.5l-2-1.2M12 17v-3M8.5 14.5l2-1.2M8.5 9.5l2 1.2" stroke="var(--ico)" stroke-width="1.2"/></symbol>
 </svg>
@@ -228,7 +244,7 @@
   <section class="panel active" id="panel-policies">
     <div class="toolbar">
       <div class="field"><label>Namespace</label><div id="pNs"></div></div>
-      <div class="field"><label>Search</label><input type="search" id="pSearch" placeholder="policy, workload, selector, peer…" style="min-width:260px"></div>
+      <div class="field"><label>Search</label><input type="search" id="pSearch" placeholder="policy, workload, selector, peer…" title="Press / to jump here, Escape to clear" style="min-width:260px"></div>
       <div class="field" style="min-width:0"><label>Port</label><input type="number" id="pPort" placeholder="any" min="1" max="65535" title="only draw rules and verdicts that cover this port"></div>
       <div class="seg" id="pKind" style="margin-bottom:1px"><button data-k="" class="active">All</button><button data-k="NetworkPolicy">Standard</button><button data-k="Cilium">Cilium</button></div>
       <label class="check"><input type="checkbox" id="pExt" checked> external peers</label>
@@ -239,11 +255,11 @@
         <label><input type="checkbox" value="uncertain" checked><i class="partial"></i>partial / unknown</label>
         <label><input type="checkbox" value="rejected" checked><i class="rejected"></i>not enforced (rejected by Cilium)</label>
       </div>
-      <div class="maptools"><label>Zoom <input type="range" class="zoom" data-map="pmap" min="50" max="160" value="100"></label><button class="btn small" data-reset="pmap" title="Put the namespaces back in a row">Reset layout</button><button class="btn small" data-dl="pmap">Download SVG</button></div>
+      <div class="maptools"><label>Zoom <input type="range" class="zoom" data-map="pmap" min="50" max="160" value="100"></label><button class="btn small" data-fit="pmap" title="Zoom so the whole map fits the width">Fit</button><button class="btn small" data-reset="pmap" title="Put the namespaces back in a row">Reset layout</button><button class="btn small" data-dl="pmap">Download SVG</button></div>
     </div>
     <div id="policiesError"></div>
     <div class="chips" id="pChips"></div>
-    <div class="map" id="pmap"><div class="empty">Loading policies…</div></div>
+    <div class="mapwrap"><div class="map" id="pmap"><div class="empty">Loading policies…</div></div><div class="focusbar" id="pFocusBar" hidden></div></div>
     <details class="card flows" id="pflows"><summary id="pflowsSummary">Connections drawn</summary><div id="pflowsBody"></div></details>
     <div class="split">
       <div class="card plist" id="pList"></div>
@@ -352,7 +368,7 @@ class Picker {
 }
 
 /* ---------- state & pickers ---------- */
-const state = { refs: null, dstKind: 'service', edges: [], focus: null, policies: [], coverage: null, pKind: '', pFocus: null, pSelected: null };
+const state = { refs: null, dstKind: 'service', edges: [], focus: null, policies: [], coverage: null, pKind: '', pFocus: null, pPolFocus: null, pGraph: null, pChip: null, pSelected: null };
 const nsOf = (name) => state.refs?.namespaces.find((n) => n.name === name);
 const hostOpt = (v) => ({ value: v, label: v, hint: /^[0-9.\/:]+$/.test(v) ? 'address' : 'host' });
 const portOpt = (v) => ({ value: v, label: v, hint: '' });
@@ -437,13 +453,25 @@ async function loadRefs(refresh = false) {
 /* ---------- policies: overview map ---------- */
 async function loadPolicies() {
   const [r, findings] = await Promise.all([api('/api/policies'), api('/api/lint').catch(() => [])]);
-  state.policies = r.policies; state.coverage = r.coverage; state.findings = findings; state.pFocus = null; state.denies = null;
+  state.policies = r.policies; state.coverage = r.coverage; state.findings = findings; state.pFocus = null; state.pPolFocus = null; state.pChip = null; state.denies = null;
   if (state.pSelected && !state.policies.some((p) => p.key === state.pSelected)) state.pSelected = null;
   renderPolicies();
 }
 function visiblePolicies() {
   const q = ($('#pSearch').value || '').toLowerCase();
   return state.policies.filter((p) => (!state.pKind || p.kind.startsWith(state.pKind)) && (!q || [p.key, p.selector, ...p.selected.map(keyOf), ...[...p.ingress, ...p.egress].flatMap((r) => r.peers.flatMap((x) => [x.label, ...(x.matches || []).map(keyOf)]))].join(' ').toLowerCase().includes(q)));
+}
+const DETAIL_EMPTY = '<div class="empty">Select a policy on the left, or click an edge or a workload on the map.</div>';
+const chipHTML = (name, tone, body, title = 'click to list') => `<button type="button" class="pill ${tone} click${state.pChip === name ? ' active' : ''}" id="p${name[0].toUpperCase() + name.slice(1)}" data-chip="${name}" aria-pressed="${state.pChip === name}" title="${title}">${body}<svg class="x" aria-hidden="true"><use href="#ico-x"/></svg></button>`;
+function syncChips() {
+  $('#pChips').querySelectorAll('[data-chip]').forEach((b) => { const on = b.dataset.chip === state.pChip; b.classList.toggle('active', on); b.setAttribute('aria-pressed', on); });
+}
+// Clear the pressed chip, the map focus and the selection; the detail panel
+// goes back to its hint.
+function clearFocus() {
+  state.pChip = null; state.pSelected = null; syncChips(); setFocus(null);
+  $('#pList').querySelectorAll('.pitem').forEach((el) => el.classList.remove('active'));
+  $('#pDetail').innerHTML = DETAIL_EMPTY;
 }
 function renderPolicies() {
   const cov = state.coverage; const vis = visiblePolicies();
@@ -452,22 +480,29 @@ function renderPolicies() {
     <span class="pill"><b>${state.policies.length}</b> policies</span>
     <span class="pill accent"><b>${cov.isolatedIngress}</b> workloads ingress-isolated</span>
     <span class="pill accent"><b>${cov.isolatedEgress}</b> egress-isolated</span>
-    <span class="pill ${unprotected ? 'warn' : 'ok'} click" id="pUnprot" title="click to list"><b>${unprotected}</b> of ${cov.workloads} workloads touched by no policy (default-allow)</span>
-    ${state.denies && !state.denies.loading ? `<span class="pill fail"><b>${state.denies.edges.length}</b> denied workload pairs${showing().has('deny') ? '' : ' (hidden: tick “denied”)'}</span>` : ''}
-    ${state.findings.length ? `<span class="pill ${state.findings.some((f) => f.Severity !== 'info') ? 'warn' : ''} click" id="pLint" title="click to list"><b>${state.findings.length}</b> lint finding${state.findings.length === 1 ? '' : 's'}</span>` : ''}
-    ${rejected.length ? `<span class="pill fail click" id="pRejected" title="click to list"><b>${rejected.length}</b> polic${rejected.length === 1 ? 'y' : 'ies'} rejected by Cilium, not enforced</span>` : ''}
+    ${chipHTML('unprot', unprotected ? 'warn' : 'ok', `<b>${unprotected}</b> of ${cov.workloads} workloads touched by no policy (default-allow)`)}
+    ${state.denies && !state.denies.loading ? (showing().has('deny') ? `<span class="pill fail"><b>${state.denies.edges.length}</b> denied workload pairs</span>` : `<button type="button" class="pill fail click" id="pShowDenied" title="draw the denied pairs on the map"><b>${state.denies.edges.length}</b> denied workload pairs · show</button>`) : ''}
+    ${state.findings.length ? chipHTML('lint', state.findings.some((f) => f.Severity !== 'info') ? 'warn' : '', `<b>${state.findings.length}</b> lint finding${state.findings.length === 1 ? '' : 's'}`) : ''}
+    ${rejected.length ? chipHTML('rejected', 'fail', `<b>${rejected.length}</b> polic${rejected.length === 1 ? 'y' : 'ies'} rejected by Cilium, not enforced`, 'click to highlight them on the map') : ''}
     ${vis.length !== state.policies.length ? `<span class="pill">${vis.length} shown</span>` : ''}
     ${pNs.value ? `<span class="pill accent">namespace ${esc(pNs.value)} and its peers</span>` : ''}`;
-  $('#pRejected')?.addEventListener('click', () => {
-    $('#pDetail').innerHTML = `<h3>Rejected by Cilium — not enforced</h3>${rejected.map((p) => `<div class="finding error"><span class="mono"><a href="#" data-p="${esc(p.key)}">${esc(p.key)}</a></span><div>${esc(p.rejected)}</div></div>`).join('')}`;
+  // A chip is a toggle: pressed while the detail panel (and, for rejected
+  // policies, the map focus) shows its list; pressing it again clears both.
+  const onChip = (name, show) => () => { if (state.pChip === name) { clearFocus(); return; } state.pChip = name; state.pSelected = null; $('#pList').querySelectorAll('.pitem').forEach((el) => el.classList.remove('active')); focusPolicies(null); syncChips(); show(); };
+  $('#pRejected')?.addEventListener('click', onChip('rejected', () => {
+    const cb = document.querySelector('#pShow input[value=rejected]');
+    if (!cb.checked) { cb.checked = true; renderPolicies(); }
+    focusPolicies(rejected.map((p) => p.key));
+    $('#pDetail').innerHTML = `<h3>Rejected by Cilium — not enforced</h3><div class="note" style="margin-bottom:10px">Highlighted on the map above. Cilium ignores these policies entirely; they isolate nothing and open nothing until fixed.</div>${rejected.map((p) => `<div class="finding error"><span class="mono"><a href="#" data-p="${esc(p.key)}">${esc(p.key)}</a></span><div>${esc(p.rejected)}</div></div>`).join('')}`;
     $('#pDetail').querySelectorAll('[data-p]').forEach((a) => a.addEventListener('click', (ev) => { ev.preventDefault(); selectPolicy(a.dataset.p); }));
-  });
-  $('#pLint')?.addEventListener('click', () => {
+  }));
+  $('#pShowDenied')?.addEventListener('click', () => { document.querySelector('#pShow input[value=deny]').checked = true; renderPolicies(); });
+  $('#pLint')?.addEventListener('click', onChip('lint', () => {
     $('#pDetail').innerHTML = `<h3>Lint findings</h3>${findingsHTML(state.findings)}`;
-  });
-  $('#pUnprot').addEventListener('click', () => {
+  }));
+  $('#pUnprot').addEventListener('click', onChip('unprot', () => {
     $('#pDetail').innerHTML = `<h3>Workloads no policy selects — all traffic allowed</h3>${cov.unprotected.length ? cov.unprotected.map((w) => `<div class="center" style="border-width:1px;border-color:var(--warn);margin-bottom:6px;padding:6px 10px"><span class="mono">${esc(keyOf(w))}</span> <span class="badge">${w.pods} pods</span></div>`).join('') : '<div class="empty">Every workload is selected by at least one policy.</div>'}`;
-  });
+  }));
   renderPolicyMap(vis); renderPolicyList(vis);
   if (state.pSelected) renderPolicyDetail(state.policies.find((p) => p.key === state.pSelected));
 }
@@ -500,14 +535,15 @@ function buildPolicyGraph(policies) {
     if (!a || !b || !portOK(rule.ports)) return;
     const status = p.rejected ? 'rejected' : rule.deny ? 'deny' : 'allow';
     const k = `${a.key}|${b.key}|${status}`;
-    if (!edges.has(k)) edges.set(k, { a: a.key, b: b.key, status, lines: [] });
+    if (!edges.has(k)) edges.set(k, { a: a.key, b: b.key, status, lines: [], pols: new Set() });
+    edges.get(k).pols.add(p.key);
     edges.get(k).lines.push(`${p.kind === 'NetworkPolicy' ? 'NP' : p.kind === 'CiliumNetworkPolicy' ? 'CNP' : 'CCNP'} ${p.namespace ? p.namespace + '/' : ''}${p.name} · ${dir} · ${rule.ports.join(', ')}${rule.l7 ? ' · L7' : ''}${p.rejected ? ' · NOT ENFORCED, rejected by Cilium' : ''}`);
   };
   policies.forEach((p) => {
     // A policy Cilium rejected is drawn in grey as intent only: it opens and
     // isolates nothing.
     const sel = p.selected.map(ensure);
-    sel.forEach((n) => { n.touched = n.touched || !p.rejected; n.I = n.I || p.isolatesIngress; n.E = n.E || p.isolatesEgress; });
+    sel.forEach((n) => { (n.pols ||= new Set()).add(p.key); n.touched = n.touched || !p.rejected; n.I = n.I || p.isolatesIngress; n.E = n.E || p.isolatesEgress; });
     p.ingress.forEach((rule) => rule.peers.forEach((peer) => {
       const srcs = peer.type === 'pods' || peer.type === 'namespace' ? (peer.matches || []).map(ensure) : [extNode(extIn, peer, 'in:')];
       srcs.forEach((s) => sel.forEach((t) => addEdge(s, t, p, rule, 'ingress')));
@@ -549,6 +585,12 @@ const showing = () => new Set([...document.querySelectorAll('#pShow input:checke
 const needsEval = () => { const s = showing(); return s.has('deny') || s.has('blocked') || s.has('uncertain'); };
 /* zoom + export, shared by both maps */
 document.querySelectorAll('.zoom').forEach((z) => z.addEventListener('input', () => { const svg = $('#' + z.dataset.map + ' svg'); if (svg) svg.style.zoom = z.value / 100; }));
+document.querySelectorAll('[data-fit]').forEach((b) => b.addEventListener('click', () => {
+  const map = $('#' + b.dataset.fit), svg = map.querySelector('svg'), z = $(`.zoom[data-map=${b.dataset.fit}]`);
+  if (!svg) return;
+  const pct = Math.round((map.clientWidth - 24) / svg.width.baseVal.value * 100);
+  z.value = Math.max(+z.min, Math.min(+z.max, pct)); svg.style.zoom = z.value / 100;
+}));
 document.querySelectorAll('[data-dl]').forEach((b) => b.addEventListener('click', () => downloadSVG(b.dataset.dl)));
 function downloadSVG(mapId) {
   const svg = $('#' + mapId + ' svg'); if (!svg) return;
@@ -592,39 +634,64 @@ function layoutColumns(mapId, columns, { colW = 340, top = 28, left = 28 } = {})
 // Connectors leave a row at its card's edge, run straight, converge in a
 // short elbow before the target card, and end on the target row. When a
 // card is in the way the line is routed around it.
-function edgePath(a, b, L, i = 0) {
+// Each edge gets its own attachment point on a workload, spread around the
+// row's middle and ordered by where the far end sits so lines leave a port
+// without crossing each other. Returns {ay, by} per edge.
+function assignPorts(edges, all) {
+  const atPort = new Map();
+  const push = (n, side, p) => { const k = n.key + '\0' + side; if (!atPort.has(k)) atPort.set(k, { n, list: [] }); atPort.get(k).list.push(p); };
+  edges.forEach((e, i) => {
+    const a = all.get(e.a), b = all.get(e.b);
+    if (!a || !b) return;
+    let sa, sb;
+    if (a.col === b.col) sa = sb = 'r';
+    else if (a.cx + a.cw < b.cx || b.cx + b.cw < a.cx) { const dir = a.cx < b.cx ? 1 : -1; sa = dir > 0 ? 'r' : 'l'; sb = dir > 0 ? 'l' : 'r'; }
+    else return;
+    push(a, sa, { i, end: 'ay', far: b.y + b.h / 2 });
+    push(b, sb, { i, end: 'by', far: a.y + a.h / 2 });
+  });
+  const out = edges.map(() => ({}));
+  atPort.forEach(({ n, list }) => {
+    list.sort((p, q) => p.far - q.far);
+    const step = Math.min(8, (n.h - 10) / list.length);
+    list.forEach((p, k) => { out[p.i][p.end] = n.y + n.h / 2 + (k - (list.length - 1) / 2) * step; });
+  });
+  return out;
+}
+// A connector: a short lead out of the source, a straight run, a short lead
+// into the destination. The direction arrow sits in the middle of the run,
+// where it cannot collide with other lines at a port, and a dot marks each
+// end. Returns the path, the mid-run arrow and the arrival angle at the
+// destination, where a second arrowhead is drawn.
+function edgePath(a, b, L, i = 0, port = {}) {
   const mid = (n) => n.y + n.h / 2;
-  const ma = mid(a), mb = mid(b), r = 10;
-  if (a.col === b.col) { const k = 34 + Math.abs(ma - mb) * 0.12; const x = a.cx + a.cw; return `M${x},${ma} L${x + 14},${ma} L${x + k},${ma + (mb - ma) * 0.3} L${x + k},${mb - (mb - ma) * 0.3} L${x + 14},${mb} L${x},${mb}`; }
+  const ma = port.ay ?? mid(a), mb = port.by ?? mid(b), r = 10;
+  const run = (x1, y1, x2, y2) => ({ x: (x1 + x2) / 2, y: (y1 + y2) / 2, angle: Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI });
+  if (a.col === b.col) {
+    const k = 34 + Math.abs(ma - mb) * 0.12, x = a.cx + a.cw, y1 = ma + (mb - ma) * 0.3, y2 = mb - (mb - ma) * 0.3;
+    return { d: `M${x},${ma} L${x + 14},${ma} L${x + k},${y1} L${x + k},${y2} L${x + 14},${mb} L${x},${mb}`, from: [x, ma], to: [x, mb], into: 180, arrow: run(x + k, y1, x + k, y2) };
+  }
   const sideBySide = a.cx + a.cw < b.cx || b.cx + b.cw < a.cx;
   if (!sideBySide) {
     const down = a.y < b.y ? 1 : -1;
     const sx = a.x + a.w / 2, tx = b.x + b.w / 2, sy = down > 0 ? a.y + a.h : a.y, ty = down > 0 ? b.y : b.y + b.h;
     const dy = Math.max(24, Math.abs(ty - sy) / 2) * down;
-    return `M${sx},${sy} C${sx},${sy + dy} ${tx},${ty - dy} ${tx},${ty}`;
+    // midpoint and tangent of the cubic at t = 0.5
+    return { d: `M${sx},${sy} C${sx},${sy + dy} ${tx},${ty - dy} ${tx},${ty}`, from: [sx, sy], to: [tx, ty], into: down > 0 ? 90 : -90, arrow: { x: (sx + tx) / 2, y: (sy + ty) / 2, angle: Math.atan2(ty - sy - dy, tx - sx) * 180 / Math.PI } };
   }
   const dir = a.cx < b.cx ? 1 : -1;
   const sx = dir > 0 ? a.cx + a.cw : a.cx, tx = dir > 0 ? b.cx : b.cx + b.cw;
   const lo = Math.min(sx, tx), hi = Math.max(sx, tx), yTop = Math.min(ma, mb), yBot = Math.max(ma, mb);
   const blocking = L.columns.filter((c, ci) => ci !== a.col && ci !== b.col && c.bx < hi && c.bx + c.bw > lo && c.by < yBot + 12 && c.by + c.bh > yTop - 12);
-  if (!blocking.length) { const el = Math.min(48, Math.abs(tx - sx) / 3); return `M${sx},${ma} L${sx + dir * 18},${ma} L${tx - dir * el},${mb} L${tx},${mb}`; }
+  if (!blocking.length) {
+    const el = Math.min(48, Math.abs(tx - sx) / 3);
+    return { d: `M${sx},${ma} L${sx + dir * 18},${ma} L${tx - dir * el},${mb} L${tx},${mb}`, from: [sx, ma], to: [tx, mb], into: dir > 0 ? 0 : 180, arrow: run(sx + dir * 18, ma, tx - dir * el, mb) };
+  }
   const lane = Math.max(...blocking.map((c) => c.by + c.bh), a.y + a.h, b.y + b.h) + 18 + (i % 10) * 5;
   const ox = sx + dir * (16 + (i % 10) * 3), ix = tx - dir * (16 + (i % 10) * 3);
-  return `M${sx},${ma} L${ox - dir * r},${ma} Q${ox},${ma} ${ox},${ma + r} L${ox},${lane - r} Q${ox},${lane} ${ox + dir * r},${lane} L${ix - dir * r},${lane} Q${ix},${lane} ${ix},${lane - r} L${ix},${mb + r} Q${ix},${mb} ${ix + dir * r},${mb} L${tx},${mb}`;
-}
-// Where a connector meets a card edge: a short coloured stub, like the
-// editor's port handles.
-function edgeStubs(a, b, status) {
-  const mid = (n) => n.y + n.h / 2;
-  const sideBySide = a.cx + a.cw < b.cx || b.cx + b.cw < a.cx || a.col === b.col;
-  if (!sideBySide) return '';
-  const dir = a.col === b.col ? 1 : a.cx < b.cx ? 1 : -1;
-  const sx = dir > 0 ? a.cx + a.cw : a.cx, tx = a.col === b.col ? b.cx + b.cw : dir > 0 ? b.cx : b.cx + b.cw;
-  return `<rect class="stub ${status}" x="${sx - 3}" y="${mid(a) - 7}" width="6" height="14"/><rect class="stub ${status}" x="${tx - 3}" y="${mid(b) - 7}" width="6" height="14"/>`;
-}
-const edgeColor = (s) => s === 'allow' ? 'var(--edge-allow)' : s === 'deny' ? 'var(--edge-deny)' : s === 'rejected' ? 'var(--skip)' : 'var(--edge-warn)';
-const markers = ['allow', 'deny', 'partial', 'unknown', 'blocked', 'rejected'].map((s) => `<marker id="arr-${s}" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L12,6 L0,12 z" fill="${edgeColor(s)}"/></marker>`).join('')
-  + '<filter id="cardShadow" x="-15%" y="-15%" width="130%" height="140%"><feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#0b1a33" flood-opacity=".28"/></filter>';
+  return { d: `M${sx},${ma} L${ox - dir * r},${ma} Q${ox},${ma} ${ox},${ma + r} L${ox},${lane - r} Q${ox},${lane} ${ox + dir * r},${lane} L${ix - dir * r},${lane} Q${ix},${lane} ${ix},${lane - r} L${ix},${mb + r} Q${ix},${mb} ${ix + dir * r},${mb} L${tx},${mb}`, from: [sx, ma], to: [tx, mb], into: dir > 0 ? 0 : 180, arrow: run(ox, lane, ix, lane) };
+}const edgeColor = (s) => s === 'allow' ? 'var(--edge-allow)' : s === 'deny' ? 'var(--edge-deny)' : s === 'rejected' ? 'var(--skip)' : 'var(--edge-warn)';
+const mapDefs = '<filter id="cardShadow" x="-15%" y="-15%" width="130%" height="140%"><feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#0b1a33" flood-opacity=".28"/></filter>';
 const cardIcon = (c) => c.ext ? 'ico-globe' : c.title === 'kube-system' ? 'ico-cluster' : 'ico-ns';
 function columnSvg(c) {
   return `<g class="colgroup${drag.title === c.title ? ' dragging' : ''}" data-title="${esc(c.title)}"><rect class="cardbg${c.ext ? ' ext' : ''}" x="${c.bx}" y="${c.by}" width="${c.bw}" height="${c.bh}"/>
@@ -682,19 +749,24 @@ function renderPolicyMap(policies) {
   if (g.extIn.length) columns.push({ title: 'external sources', ext: true, nodes: g.extIn });
   Object.keys(byNs).sort().forEach((ns) => columns.push({ title: ns, nodes: byNs[ns].sort((a, b) => a.name.localeCompare(b.name)) }));
   if (g.extOut.length) columns.push({ title: 'external destinations', ext: true, nodes: g.extOut });
-  if (!columns.length) { map.innerHTML = '<div class="empty">No workloads found.</div>'; return; }
+  if (!columns.length) { map.innerHTML = '<div class="empty">No workloads found.</div>'; state.pGraph = null; $('#pFocusBar').hidden = true; return; }
   const L = layoutColumns('pmap', columns);
   const all = new Map(); columns.forEach((c) => c.nodes.forEach((n) => all.set(n.key, n)));
-  const parts = [`<defs>${markers}</defs>`, '<g class="edges">'];
-  g.edges.forEach((e, i) => parts.push(`<path class="edge ${e.status}" data-i="${i}" data-a="${esc(e.a)}" data-b="${esc(e.b)}" d="${edgePath(all.get(e.a), all.get(e.b), L, i)}" marker-end="url(#arr-${e.status})"/>`));
+  const ports = assignPorts(g.edges, all);
+  const shapes = g.edges.map((e, i) => edgePath(all.get(e.a), all.get(e.b), L, i, ports[i]));
+  const parts = [`<defs>${mapDefs}</defs>`, '<g class="halos">'];
+  g.edges.forEach((e, i) => { if (e.status !== 'deny') parts.push(`<path class="halo" d="${shapes[i].d}"/>`); });
+  parts.push('</g><g class="edges">');
+  g.edges.forEach((e, i) => { const p = shapes[i]; parts.push(`<g class="edge ${e.status}" data-i="${i}" data-a="${esc(e.a)}" data-b="${esc(e.b)}"><path d="${p.d}"/><circle class="dot" cx="${p.from[0]}" cy="${p.from[1]}" r="3.5"/><path class="head" d="M-6,-4.5 L6,0 L-6,4.5 z" transform="translate(${p.arrow.x.toFixed(1)},${p.arrow.y.toFixed(1)}) rotate(${p.arrow.angle.toFixed(1)})"/><path class="head" d="M-11,-4.5 L0,0 L-11,4.5 z" transform="translate(${p.to[0]},${p.to[1]}) rotate(${p.into})"/></g>`); });
   parts.push('</g>');
   columns.forEach((c) => parts.push(columnSvg(c)));
-  parts.push('<g class="stubs">' + g.edges.map((e) => edgeStubs(all.get(e.a), all.get(e.b), e.status)).join('') + '</g>');
   const scroll = [map.scrollLeft, map.scrollTop];
   map.classList.remove('focused');
   map.innerHTML = `<svg width="${L.width}" height="${L.height}">${parts.join('')}</svg>`;
   map.querySelector('svg').style.zoom = $('.zoom[data-map=pmap]').value / 100;
   [map.scrollLeft, map.scrollTop] = scroll;
+  state.pGraph = g;
+  paintFocus();
   enableColumnDrag(map, 'pmap', columns, () => renderPolicyMap(policies));
   map.querySelectorAll('.edge').forEach((p) => {
     const e = g.edges[+p.dataset.i];
@@ -706,17 +778,62 @@ function renderPolicyMap(policies) {
       const name = e.lines[0].split(' · ')[0].replace(/^(NP|CNP|CCNP) /, ''); const pol = policies.find((x) => (x.namespace ? x.namespace + '/' : '') + x.name === name); if (pol) selectPolicy(pol.key);
     });
   });
-  map.querySelectorAll('.node').forEach((n) => n.addEventListener('click', () => focusMap(map, 'pFocus', n.dataset.key, () => { showWorkloadPolicies(n.dataset.key, policies); renderPolicyFlows(g.edges); })));
+  map.querySelectorAll('.node').forEach((n) => n.addEventListener('click', () => {
+    state.pChip = null; syncChips();
+    setFocus(state.pFocus === n.dataset.key ? null : { node: n.dataset.key });
+    showWorkloadPolicies(n.dataset.key, policies);
+  }));
   renderPolicyFlows(g.edges);
+}
+// Focus the policy map on a set of policies: their edges and the workloads
+// they select or name stay lit, everything else dims. null clears it.
+// The policy map has one focus at a time: a workload (its edges) or a set of
+// policies. setFocus owns the state, the paint, the status bar and the
+// connections table, so every caller stays consistent.
+function setFocus(f) {
+  state.pFocus = f?.node || null;
+  state.pPolFocus = f?.policies?.length ? f.policies : null;
+  paintFocus();
+  if (state.pGraph) renderPolicyFlows(state.pGraph.edges);
+}
+const focusPolicies = (keys) => setFocus(keys && keys.length ? { policies: keys } : null);
+// Repaint from state: after the map re-renders or a hover preview ends.
+function paintFocus() {
+  const map = $('#pmap'), bar = $('#pFocusBar');
+  if (state.pFocus) { applyNodeFocus(map, state.pFocus); bar.hidden = true; return; }
+  applyFocus(state.pPolFocus);
+  const pols = (state.pPolFocus || []).map((k) => state.policies.find((p) => p.key === k)).filter(Boolean);
+  bar.hidden = !pols.length;
+  if (!pols.length) return;
+  const rejected = pols.every((p) => p.rejected);
+  const what = pols.length === 1 ? `<span class="mono">${esc(pols[0].namespace ? pols[0].namespace + '/' + pols[0].name : pols[0].name)}</span>` : `<b>${pols.length}</b> policies`;
+  const onMap = map.querySelector('.edge.focus, .node.focus');
+  bar.className = 'focusbar' + (rejected ? ' fail' : '');
+  bar.innerHTML = `<span class="dot"></span><span>Showing ${what}${rejected ? ', not enforced' : ''}${onMap ? '' : ' (nothing to show with the current filters)'}</span><kbd>Esc</kbd><button type="button" title="Clear" aria-label="Clear focus"><svg><use href="#ico-x"/></svg></button>`;
+  bar.querySelector('button').addEventListener('click', clearFocus);
+}
+// Light the edges and workloads of keys and dim the rest. Dims nothing when
+// nothing matches, so the map never goes blank.
+function applyFocus(keys) {
+  const map = $('#pmap'); const g = state.pGraph;
+  if (!g) return;
+  const want = new Set(keys || []); const hit = (s) => !!s && [...s].some((k) => want.has(k));
+  const lit = new Set();
+  map.querySelectorAll('.edge').forEach((p) => { const on = hit(g.edges[+p.dataset.i].pols); p.classList.toggle('focus', on); if (on) { lit.add(p.dataset.a); lit.add(p.dataset.b); } });
+  g.nodes.forEach((n) => { if (hit(n.pols)) lit.add(n.key); });
+  map.querySelectorAll('.node').forEach((n) => n.classList.toggle('focus', lit.has(n.dataset.key)));
+  map.classList.toggle('focused', lit.size > 0);
 }
 function focusMap(map, slot, key, after) {
   state[slot] = state[slot] === key ? null : key;
-  const f = state[slot];
+  applyNodeFocus(map, state[slot]);
+  if (after) after(state[slot]);
+}
+function applyNodeFocus(map, f) {
   map.classList.toggle('focused', !!f);
   map.querySelectorAll('.edge').forEach((p) => p.classList.toggle('focus', p.dataset.a === f || p.dataset.b === f));
   const touched = new Set(); map.querySelectorAll('.edge.focus').forEach((p) => { touched.add(p.dataset.a); touched.add(p.dataset.b); });
   map.querySelectorAll('.node').forEach((g) => g.classList.toggle('focus', g.dataset.key === f || touched.has(g.dataset.key)));
-  if (after) after(f);
 }
 function showWorkloadPolicies(key, policies) {
   if (!key) return;
@@ -730,21 +847,39 @@ function showWorkloadPolicies(key, policies) {
 // Lint findings that mention a policy (subjects are "ns/name", sometimes a pair).
 const findingsFor = (p) => state.findings.filter((f) => f.Subject.split(/[\s,+]+/).includes((p.namespace ? p.namespace + '/' : '') + p.name));
 const sevClass = { error: 'deny', warning: 'l7', info: '' };
-const findingBadges = (p) => findingsFor(p).map((f) => `<span class="badge ${sevClass[f.Severity] || ''}" title="${esc(f.Message)}">${esc(f.Code)}</span>`).join('');
-const findingsHTML = (fs) => fs.length ? fs.map((f) => `<div class="finding ${f.Severity}"><span class="badge ${sevClass[f.Severity] || ''}">${esc(f.Code)}</span> <span class="mono">${esc(f.Subject)}</span><div>${esc(f.Message)}</div>${f.Hint ? `<div class="note">${esc(f.Hint)}</div>` : ''}</div>`).join('') : '<div class="empty">✓ No findings.</div>';
+// One badge per lint code, with a count when it fires more than once.
+const findingBadges = (p) => {
+  const byCode = new Map();
+  findingsFor(p).forEach((f) => { const g = byCode.get(f.Code) || { ...f, n: 0 }; g.n++; byCode.set(f.Code, g); });
+  return [...byCode.values()].map((g) => `<span class="badge ${sevClass[g.Severity] || ''}" title="${esc(g.Message)}">${esc(g.Code)}${g.n > 1 ? ` x${g.n}` : ''}</span>`).join('');
+};
+// Findings with the same code and message collapse into one card that lists
+// every subject, so five overlap warnings read as one.
+const findingsHTML = (fs) => {
+  if (!fs.length) return '<div class="empty">✓ No findings.</div>';
+  const groups = new Map();
+  fs.forEach((f) => { const k = `${f.Code}|${f.Message}|${f.Hint || ''}`; if (!groups.has(k)) groups.set(k, { ...f, subjects: [] }); groups.get(k).subjects.push(f.Subject); });
+  return [...groups.values()].map((g) => `<div class="finding ${g.Severity}"><span class="badge ${sevClass[g.Severity] || ''}">${esc(g.Code)}</span> ${g.subjects.length === 1 ? `<span class="mono">${esc(g.subjects[0])}</span>` : `<b>${g.subjects.length}</b> places`}<div>${esc(g.Message)}</div>${g.subjects.length > 1 ? `<div class="subjects">${g.subjects.map((x) => `<span>${esc(x)}</span>`).join('')}</div>` : ''}${g.Hint ? `<div class="note">${esc(g.Hint)}</div>` : ''}</div>`).join('');
+};
 function renderPolicyList(policies) {
   const kindBadge = (k) => k === 'NetworkPolicy' ? '<span class="badge std">NP</span>' : k === 'CiliumNetworkPolicy' ? '<span class="badge cil">CNP</span>' : '<span class="badge cil">CCNP</span>';
   $('#pList').innerHTML = policies.length ? policies.map((p) => {
     const denies = [...p.ingress, ...p.egress].filter((r) => r.deny).length; const l7 = [...p.ingress, ...p.egress].some((r) => r.l7);
-    return `<div class="pitem${p.key === state.pSelected ? ' active' : ''}" data-p="${esc(p.key)}">
+    return `<div class="pitem${p.key === state.pSelected ? ' active' : ''}" data-p="${esc(p.key)}" tabindex="0" role="button">
       <div class="name">${kindBadge(p.kind)} ${esc((p.namespace ? p.namespace + '/' : '') + p.name)}</div>
       <div class="badges">${p.rejected ? `<span class="badge deny" title="${esc(p.rejected)}">NOT ENFORCED</span>` : ''}${p.isolatesIngress ? '<span class="badge i">I</span>' : ''}${p.isolatesEgress ? '<span class="badge e">E</span>' : ''}${denies ? `<span class="badge deny">${denies} deny</span>` : ''}${l7 ? '<span class="badge l7">L7</span>' : ''}${findingBadges(p)}</div>
       <div class="meta">selects ${esc(p.selector)} → ${p.selected.length} workload${p.selected.length === 1 ? '' : 's'} · ${p.ingress.length} ingress / ${p.egress.length} egress rules</div></div>`;
   }).join('') : '<div class="empty">No policies match.</div>';
-  $('#pList').querySelectorAll('.pitem').forEach((el) => el.addEventListener('click', () => selectPolicy(el.dataset.p)));
+  $('#pList').querySelectorAll('.pitem').forEach((el) => {
+    el.addEventListener('click', () => selectPolicy(el.dataset.p));
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectPolicy(el.dataset.p); } });
+    el.addEventListener('mouseenter', () => applyFocus([el.dataset.p]));
+    el.addEventListener('mouseleave', paintFocus);
+  });
 }
 function selectPolicy(key) {
-  state.pSelected = key;
+  state.pSelected = key; state.pChip = null; syncChips();
+  focusPolicies([key]);
   $('#pList').querySelectorAll('.pitem').forEach((el) => el.classList.toggle('active', el.dataset.p === key));
   renderPolicyDetail(state.policies.find((p) => p.key === key));
   $('#pDetail').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -781,23 +916,20 @@ function renderPolicyDetail(p) {
   requestAnimationFrame(() => drawConnectors(d));
 }
 // Elbow connectors: out of the rule card, converge to a point before the
-// selected card, then straight in; stubs mark both ends.
+// selected card, then straight in.
 function drawConnectors(d) {
   const svg = d.querySelector('.connectors'); const center = d.querySelector('#pCenter'); if (!svg || !center) return;
   const box = d.getBoundingClientRect(); const c = center.getBoundingClientRect();
   const rel = (r) => ({ left: r.left - box.left, right: r.right - box.left, top: r.top - box.top, bottom: r.bottom - box.top });
   const C = rel(c); const cy = (C.top + C.bottom) / 2;
-  const paths = [], stubs = [];
-  const stub = (x, y, cls) => stubs.push(`<rect class="stub ${cls}" x="${x - 3}" y="${y - 7}" width="6" height="14" rx="2"/>`);
+  const paths = [];
   d.querySelectorAll('.ecard').forEach((el) => {
     const R = rel(el.getBoundingClientRect()); const ry = (R.top + R.bottom) / 2; const cls = el.classList.contains('deny') ? 'deny' : 'allow';
-    if (el.dataset.side === 'in') { paths.push(`<path class="${cls}" d="M${R.right},${ry} L${R.right + 18},${ry} L${C.left - 44},${cy} L${C.left},${cy}" marker-end="url(#carr-${cls})"/>`); stub(R.right, ry, cls); }
-    else { paths.push(`<path class="${cls}" d="M${C.right},${cy} L${C.right + 44},${ry === cy ? cy : cy} L${R.left - 18},${ry} L${R.left},${ry}" marker-end="url(#carr-${cls})"/>`); stub(R.left, ry, cls); }
+    if (el.dataset.side === 'in') { paths.push(`<path class="${cls}" d="M${R.right},${ry} L${R.right + 18},${ry} L${C.left - 44},${cy} L${C.left},${cy}" marker-end="url(#carr-${cls})"/>`); }
+    else { paths.push(`<path class="${cls}" d="M${C.right},${cy} L${C.right + 44},${ry === cy ? cy : cy} L${R.left - 18},${ry} L${R.left},${ry}" marker-end="url(#carr-${cls})"/>`); }
   });
-  if (d.querySelector('.ecard[data-side=in]')) stub(C.left, cy, 'allow');
-  if (d.querySelector('.ecard[data-side=out]')) stub(C.right, cy, 'allow');
   svg.setAttribute('width', box.width); svg.setAttribute('height', d.scrollHeight);
-  svg.innerHTML = `<defs>${['allow', 'deny'].map((s) => `<marker id="carr-${s}" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="9" markerHeight="9" orient="auto"><path d="M0,0 L12,6 L0,12 z" fill="${edgeColor(s)}"/></marker>`).join('')}</defs>${paths.join('')}${stubs.join('')}`;
+  svg.innerHTML = `<defs>${['allow', 'deny'].map((s) => `<marker id="carr-${s}" viewBox="0 0 12 12" refX="11" refY="6" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto"><path d="M1,1 L11,6 L1,11 z" fill="${edgeColor(s)}"/></marker>`).join('')}</defs>${paths.join('')}`;
 }
 
 /* ---------- trace ---------- */
@@ -882,7 +1014,14 @@ $('#theme').addEventListener('click', () => {
   try { localStorage.setItem('netpol-map-theme', document.documentElement.dataset.theme); } catch {}
 });
 window.addEventListener('resize', () => { if (state.pSelected) drawConnectors($('#pDetail')); });
-document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.target.closest('.picker') && e.target.tagName !== 'INPUT' && $('#panel-trace').classList.contains('active')) runTrace(); });
+document.addEventListener('keydown', (e) => {
+  if (e.target.closest('.picker')) return;
+  if (e.key === 'Enter' && e.target.tagName !== 'INPUT' && $('#panel-trace').classList.contains('active')) runTrace();
+  const onPolicies = $('#panel-policies').classList.contains('active');
+  if (e.key === '/' && onPolicies && !['INPUT', 'TEXTAREA'].includes(e.target.tagName)) { e.preventDefault(); $('#pSearch').focus(); $('#pSearch').select(); return; }
+  if (e.key === 'Escape' && e.target === $('#pSearch')) { if ($('#pSearch').value) { $('#pSearch').value = ''; renderPolicies(); } $('#pSearch').blur(); return; }
+  if (e.key === 'Escape' && onPolicies && (state.pPolFocus || state.pFocus || state.pChip || state.pSelected)) clearFocus();
+});
 try { const t = localStorage.getItem('netpol-map-theme'); if (t) document.documentElement.dataset.theme = t; } catch {}
 
 // Restore a trace from the URL once refs are loaded.
