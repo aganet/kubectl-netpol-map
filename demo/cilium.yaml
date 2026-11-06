@@ -16,6 +16,8 @@
 #   shop/worker -> api.stripe.com:443 --resolve-fqdn   REACHABLE (toFQDNs and worker-egress)
 #   shop/worker -> example.com:443    --resolve-fqdn   REACHABLE (worker-egress ipBlock)
 #   any pod     -> 169.254.169.254                     BLOCKED at Egress policy (egressDeny)
+#   shop/frontend -> shop/api:8080                     REACHABLE, shown as ALLOW (L7) because api-http-only adds HTTP conditions
+#   lint                                               L006 shop/frontend-dns-visibility rejected by Cilium, not enforced
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -58,3 +60,54 @@ spec:
   egressDeny:
     - toCIDR:
         - 169.254.169.254/32
+---
+# L7: the frontend may call the API only with GET /api/* and POST /api/orders.
+# The L4 part is what the engine evaluates, so the map shows ALLOW (L7).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: api-http-only
+  namespace: shop
+spec:
+  endpointSelector:
+    matchLabels:
+      app: api
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: frontend
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+          rules:
+            http:
+              - method: GET
+                path: /api/.*
+              - method: POST
+                path: /api/orders
+---
+# A copy-paste mistake kept on purpose: DNS rules belong in egress. Cilium
+# rejects the policy (VALID=False), so it enforces nothing; the tool lists it
+# as not enforced and lint reports L006.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: frontend-dns-visibility
+  namespace: shop
+spec:
+  endpointSelector:
+    matchLabels:
+      app: frontend
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+          rules:
+            dns:
+              - matchPattern: "*"

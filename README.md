@@ -4,6 +4,8 @@
 
 ![Policy detail](docs/policy-detail.png)
 
+![Trace](docs/trace.png)
+
 ![Terminal UI](docs/terminal.png)
 
 `kubectl netpol-map` shows what your Kubernetes NetworkPolicies (standard and Cilium)
@@ -21,7 +23,7 @@ Or a binary from [releases](https://github.com/aganet/kubectl-netpol-map/release
 (the underscore is how kubectl maps `kubectl netpol-map` to a plugin):
 
 ```sh
-V=0.2.2; OS=darwin; ARCH=arm64
+V=0.3.0; OS=darwin; ARCH=arm64
 curl -LO https://github.com/aganet/kubectl-netpol-map/releases/download/v$V/kubectl-netpol-map_${V}_${OS}_${ARCH}.tar.gz
 tar -xzf kubectl-netpol-map_${V}_${OS}_${ARCH}.tar.gz && sudo install -m 0755 kubectl-netpol_map /usr/local/bin/
 ```
@@ -53,7 +55,8 @@ A `path` reference is `ns/pod`, `ns/workload`, `ns/service[:port]`,
 `service.ns.svc[:port]`, `ns:key=value`, or external: `internet`, a host, an IP, a CIDR.
 
 `demo/demo.yaml` is a three-tier app with typical policies; its header lists the
-expected verdict of each command. `demo/cilium.yaml` adds Cilium examples.
+expected verdict of each command. `demo/cilium.yaml` adds Cilium examples: DNS-aware
+egress, a cluster-wide deny, an HTTP L7 rule, and one policy Cilium rejects on purpose.
 
 **Offline**: `--offline` on any command reads manifests instead of a cluster,
 so a Git repo, a Helm chart or a Kustomize build can be reviewed before it is
@@ -90,8 +93,16 @@ External targets check `ipBlock`, Cilium `toEntities`/`toCIDR`/`toFQDNs`.
 ## UIs
 
 **Web** (`ui`): the policy map with namespace, port and edge-type filters,
-draggable groups, SVG export, lint badges; a policy detail in the Cilium-editor
-layout; trace with dropdowns.
+draggable groups, Fit and zoom, SVG export. A connector runs from a dot at the
+source to an arrow at the destination, with a second arrow mid-line, and every
+connector has its own port so parallel lines stay apart. Click or hover a policy
+in the list and the map lights only what it touches; the summary chips (rejected
+by Cilium, lint findings, default-allow workloads, denied pairs) are toggles
+that do the same and open the matching list; `Esc` clears, `/` jumps to the
+search. Lint findings are grouped by code. The policy detail uses the
+Cilium-editor layout; trace has dropdowns.
+
+![Rejected policy highlighted](docs/rejected.png)
 
 **Terminal** (`tui`): namespaces left; policies (`1`), connections (`2`) or
 workloads (`3`) middle; detail below with a "what this policy does" list, the
