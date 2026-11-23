@@ -3,7 +3,7 @@ kind: Plugin
 metadata:
   name: netpol-map
 spec:
-  version: v0.3.0
+  version: v0.3.1
   homepage: https://github.com/aganet/kubectl-netpol-map
   shortDescription: Show what NetworkPolicies allow and deny
   description: |
@@ -15,26 +15,26 @@ spec:
     what-if diff of a policy manifest, and a lint. It only reads the cluster.
   platforms:
     - selector: {matchLabels: {os: darwin, arch: arm64}}
-      uri: https://github.com/aganet/kubectl-netpol-map/releases/download/v0.3.0/kubectl-netpol-map_0.3.0_darwin_arm64.tar.gz
-      sha256: 2853fe66622207c2d4d937a9762c0661a27561a87be9e54f5b159e139a2d0214
+      uri: https://github.com/aganet/kubectl-netpol-map/releases/download/v0.3.1/kubectl-netpol-map_0.3.1_darwin_arm64.tar.gz
+      sha256: 35430542899a81df51716d69ddd73ab2fbbf0a4c0023639080b6b3dbe32f290e
       bin: kubectl-netpol_map
     - selector: {matchLabels: {os: darwin, arch: amd64}}
-      uri: https://github.com/aganet/kubectl-netpol-map/releases/download/v0.3.0/kubectl-netpol-map_0.3.0_darwin_amd64.tar.gz
-      sha256: dedf940e8779e5f570f0acc7156e160c9568e1d3b37aa1b4f012609f73b103e0
+      uri: https://github.com/aganet/kubectl-netpol-map/releases/download/v0.3.1/kubectl-netpol-map_0.3.1_darwin_amd64.tar.gz
+      sha256: 63c460c59d6ae934c47bb8156f33d1e9eba36dbfaf00182935ea74e1917c4621
       bin: kubectl-netpol_map
     - selector: {matchLabels: {os: linux, arch: amd64}}
-      uri: https://github.com/aganet/kubectl-netpol-map/releases/download/v0.3.0/kubectl-netpol-map_0.3.0_linux_amd64.tar.gz
-      sha256: 4afdb95fc8e07255094c5755b23f10d66a00d08bb52856e575b26fbcc833513d
+      uri: https://github.com/aganet/kubectl-netpol-map/releases/download/v0.3.1/kubectl-netpol-map_0.3.1_linux_amd64.tar.gz
+      sha256: 29dfc404cdb84f225cd19fdb649ca1bb1922162949cb5d5cc30b257d95093043
       bin: kubectl-netpol_map
     - selector: {matchLabels: {os: linux, arch: arm64}}
-      uri: https://github.com/aganet/kubectl-netpol-map/releases/download/v0.3.0/kubectl-netpol-map_0.3.0_linux_arm64.tar.gz
-      sha256: d0a3cae6e84bfaa8437ee9d9417ed3d19fbd2c8fb36c2e1d270e62104172f59c
+      uri: https://github.com/aganet/kubectl-netpol-map/releases/download/v0.3.1/kubectl-netpol-map_0.3.1_linux_arm64.tar.gz
+      sha256: d78e533f8c51b0bcbd69c710fc8c6bc65039d111edacdb8baf7f889d0b47e888
       bin: kubectl-netpol_map
     - selector: {matchLabels: {os: windows, arch: amd64}}
-      uri: https://github.com/aganet/kubectl-netpol-map/releases/download/v0.3.0/kubectl-netpol-map_0.3.0_windows_amd64.zip
-      sha256: 233c67c93bde52db3014365561c3963835809af2c2bcc8e8531fd7eccaea55e7
+      uri: https://github.com/aganet/kubectl-netpol-map/releases/download/v0.3.1/kubectl-netpol-map_0.3.1_windows_amd64.zip
+      sha256: 009543e5a52c56cb745e40a0f3dc12f88158ccdf53573a61fd61e280e37af2d2
       bin: kubectl-netpol_map.exe
     - selector: {matchLabels: {os: windows, arch: arm64}}
-      uri: https://github.com/aganet/kubectl-netpol-map/releases/download/v0.3.0/kubectl-netpol-map_0.3.0_windows_arm64.zip
-      sha256: 58ab94a43a4c1fb5339bd989ccbf1d62bc66cb43f3cc63d57d4a43d8840f1367
+      uri: https://github.com/aganet/kubectl-netpol-map/releases/download/v0.3.1/kubectl-netpol-map_0.3.1_windows_arm64.zip
+      sha256: 920a45ddd622334bb3b28b8e6448db0077d188475897e8dcd550f0852bd75e1a
       bin: kubectl-netpol_map.exe
