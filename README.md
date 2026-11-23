@@ -150,13 +150,19 @@ the machine running the tool, which can differ from the cluster's.
 
 Only `list` and discovery calls; nothing is created, updated or deleted. A
 read-only RBAC role is enough. The web UI binds to localhost and answers only
-to localhost host names. Dependencies are scanned with `govulncheck` in CI.
+to localhost host names. `make vuln` scans the dependencies with `govulncheck`.
 See [SECURITY.md](SECURITY.md) for reporting.
 
 ## Development
 
-`make build`, `make test`, `make demo`. Layout: `cmd/` CLI, `internal/policy`
-engine, `internal/render`, `internal/ui`, `internal/tui`, `internal/lint`,
-`demo/`. PRs welcome; one change per PR, `make test` green.
+`make build`, `make test`, `make vuln`, `make demo`. Layout: `cmd/` CLI,
+`internal/policy` engine, `internal/render`, `internal/ui`, `internal/tui`,
+`internal/lint`, `demo/`. PRs welcome; one change per PR, `make test` green.
+
+Releases are built locally, there is no CI: `git tag vX.Y.Z && git push --tags`,
+then `GITHUB_TOKEN=... make release` runs goreleaser for every platform and
+uploads the archives and `checksums.txt` to the GitHub release. `make snapshot`
+builds the same into `dist/` without a tag or token. Afterwards update the
+sha256 values in `krew/netpol-map.yaml` from `checksums.txt`.
 
 [MIT](LICENSE)

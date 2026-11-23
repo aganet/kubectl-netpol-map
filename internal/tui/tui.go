@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/yaml"
 
@@ -970,6 +971,9 @@ func (m Model) renderList() string {
 			lines = append(lines, m.edgeLine(es[i], i == m.listIdx, w-2))
 		}
 	}
+	for i := range lines { // a wrapped line would push the whole screen past the terminal
+		lines[i] = trunc(lines[i], w-2)
+	}
 	style := sPane
 	if m.pane == paneList {
 		style = sActive
@@ -1007,7 +1011,7 @@ func (m Model) policyLine(p policy.PolicyView, sel bool, w int) string {
 	if p.Kind == "NetworkPolicy" {
 		kindStyle = sAccent
 	}
-	return strings.Join([]string{kindStyle.Render(cells[0]), cells[1], sMuted.Render(cells[2]), sFail.Render(cells[3]), sWarn.Render(cells[4]), sMuted.Render(cells[5]), cells[6], cells[7]}, " ")
+	return trunc(strings.Join([]string{kindStyle.Render(cells[0]), cells[1], sMuted.Render(cells[2]), sFail.Render(cells[3]), sWarn.Render(cells[4]), sMuted.Render(cells[5]), cells[6], cells[7]}, " "), w)
 }
 
 func (m Model) workloadLine(wl workload, sel bool, w int) string {
@@ -1032,7 +1036,7 @@ func (m Model) workloadLine(wl workload, sel bool, w int) string {
 		isoStyle = sWarn
 		cells[3] = fmt.Sprintf("%-5s", "open")
 	}
-	return strings.Join([]string{sMuted.Render(cells[0]), cells[1], cells[2], isoStyle.Render(cells[3]), cells[4], sMuted.Render(trunc(peers, max(10, w-74)))}, " ")
+	return trunc(strings.Join([]string{sMuted.Render(cells[0]), cells[1], cells[2], isoStyle.Render(cells[3]), cells[4], sMuted.Render(trunc(peers, max(10, w-74)))}, " "), w)
 }
 
 func (m Model) edgeLine(e policy.Edge, sel bool, w int) string {
@@ -1044,12 +1048,15 @@ func (m Model) edgeLine(e policy.Edge, sel bool, w int) string {
 		st = sWarn
 	}
 	arrow := map[string]string{"allow": "──▶", "deny": "──╳", "partial": "─?▶", "unknown": "─?▶"}[e.Status]
-	cells := []string{fmt.Sprintf("%-32s", trunc(refKey(e.From), 32)), arrow, fmt.Sprintf("%-32s", trunc(refKey(e.To), 32)), fmt.Sprintf("%-14s", e.Verdict), e.Reason}
+	// a long verdict (several ports, L7) takes its room from the reason
+	verdict := fmt.Sprintf("%-14s", trunc(e.Verdict, 28))
+	reason := trunc(e.Reason, max(10, w-71-lipgloss.Width(verdict)))
+	cells := []string{fmt.Sprintf("%-32s", trunc(refKey(e.From), 32)), arrow, fmt.Sprintf("%-32s", trunc(refKey(e.To), 32)), verdict, reason}
 	line := trunc(strings.Join(cells, " "), w)
 	if sel {
 		return sSel.Render(fmt.Sprintf("%-*s", w, line))
 	}
-	return strings.Join([]string{cells[0], st.Render(arrow), cells[2], st.Render(cells[3]), sMuted.Render(trunc(e.Reason, max(10, w-86)))}, " ")
+	return trunc(strings.Join([]string{cells[0], st.Render(arrow), cells[2], st.Render(verdict), sMuted.Render(reason)}, " "), w)
 }
 
 func shortKeys(keys []string, max int) []string {
@@ -1555,9 +1562,11 @@ func (m Model) renderPicker() string {
 	return sModal.Width(min(m.width-6, 96)).Render(strings.Join(lines, "\n"))
 }
 
+// trunc cuts s to n cells, measured in display width, so multi-byte text
+// and styled strings never wrap the row they sit in.
 func trunc(s string, n int) string {
-	if n <= 1 || len(s) <= n {
+	if n <= 1 {
 		return s
 	}
-	return s[:n-1] + "…"
+	return ansi.Truncate(s, n, "…")
 }

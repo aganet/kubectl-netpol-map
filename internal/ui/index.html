@@ -493,7 +493,7 @@ function renderPolicies() {
     const cb = document.querySelector('#pShow input[value=rejected]');
     if (!cb.checked) { cb.checked = true; renderPolicies(); }
     focusPolicies(rejected.map((p) => p.key));
-    $('#pDetail').innerHTML = `<h3>Rejected by Cilium — not enforced</h3><div class="note" style="margin-bottom:10px">Highlighted on the map above. Cilium ignores these policies entirely; they isolate nothing and open nothing until fixed.</div>${rejected.map((p) => `<div class="finding error"><span class="mono"><a href="#" data-p="${esc(p.key)}">${esc(p.key)}</a></span><div>${esc(p.rejected)}</div></div>`).join('')}`;
+    $('#pDetail').innerHTML = `<h3>Rejected by Cilium — not enforced</h3><div class="note" style="margin-bottom:10px">Highlighted on the map above. Cilium ignores these policies entirely; they isolate nothing and open nothing until fixed.</div>${rejected.map((p) => `<div class="finding error"><span class="mono"><a href="#" data-p="${esc(p.key)}">${esc(p.key)}</a></span> <span class="badge${p.selected.length ? '' : ' deny'}">${p.selected.length} workload${p.selected.length === 1 ? '' : 's'}</span><div>${esc(p.rejected)}</div></div>`).join('')}`;
     $('#pDetail').querySelectorAll('[data-p]').forEach((a) => a.addEventListener('click', (ev) => { ev.preventDefault(); selectPolicy(a.dataset.p); }));
   }));
   $('#pShowDenied')?.addEventListener('click', () => { document.querySelector('#pShow input[value=deny]').checked = true; renderPolicies(); });
@@ -808,8 +808,10 @@ function paintFocus() {
   const rejected = pols.every((p) => p.rejected);
   const what = pols.length === 1 ? `<span class="mono">${esc(pols[0].namespace ? pols[0].namespace + '/' + pols[0].name : pols[0].name)}</span>` : `<b>${pols.length}</b> policies`;
   const onMap = map.querySelector('.edge.focus, .node.focus');
+  // Say why nothing lit up: a stale selector is the usual reason.
+  const why = onMap ? '' : pols.every((p) => !p.selected.length) ? ' (selects no workload)' : ' (its workloads are outside the current filters)';
   bar.className = 'focusbar' + (rejected ? ' fail' : '');
-  bar.innerHTML = `<span class="dot"></span><span>Showing ${what}${rejected ? ', not enforced' : ''}${onMap ? '' : ' (nothing to show with the current filters)'}</span><kbd>Esc</kbd><button type="button" title="Clear" aria-label="Clear focus"><svg><use href="#ico-x"/></svg></button>`;
+  bar.innerHTML = `<span class="dot"></span><span>Showing ${what}${rejected ? ', not enforced' : ''}${why}</span><kbd>Esc</kbd><button type="button" title="Clear" aria-label="Clear focus"><svg><use href="#ico-x"/></svg></button>`;
   bar.querySelector('button').addEventListener('click', clearFocus);
 }
 // Light the edges and workloads of keys and dim the rest. Dims nothing when
